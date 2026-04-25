@@ -5,6 +5,7 @@ ElevenLabs Service — Text-to-speech for morning briefings and voice Q&A respon
 import httpx
 import base64
 from app.config.settings import get_settings
+from typing import Optional
 
 settings = get_settings()
 
