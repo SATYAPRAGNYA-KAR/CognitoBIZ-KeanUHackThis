@@ -2,8 +2,9 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/index'
-import { CheckCircle2, Clock, ExternalLink, ChevronRight } from 'lucide-react'
-import { formatCurrency, formatDate, getMilestoneColor } from '@/lib/utils'
+import { Button } from '@/components/ui/Button'
+import { Clock, ChevronRight, Zap } from 'lucide-react'
+import { formatCurrency, formatDate } from '@/lib/utils'
 import type { Contract } from '@/types'
 
 const statusVariant: Record<string, 'gold' | 'jade' | 'ember' | 'gray'> = {
@@ -13,9 +14,10 @@ const statusVariant: Record<string, 'gold' | 'jade' | 'ember' | 'gray'> = {
 interface ContractCardProps {
   contract: Contract
   index?: number
+  onActivate?: (contractId: string) => Promise<void>
 }
 
-export function ContractCard({ contract, index = 0 }: ContractCardProps) {
+export function ContractCard({ contract, index = 0, onActivate }: ContractCardProps) {
   const completed = contract.milestones.filter(m => m.status === 'paid' || m.status === 'approved').length
   const total = contract.milestones.length
   const pct = total > 0 ? (completed / total) * 100 : 0
@@ -26,13 +28,13 @@ export function ContractCard({ contract, index = 0 }: ContractCardProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.07 }}
     >
-      <Link href={`/dashboard/contracts/${contract._id}`}>
+      <Link href={`/contracts/${contract._id}`}>
         <div className="glass rounded-2xl border border-white/6 p-5 hover:border-gold-400/20 transition-all group cursor-pointer">
           {/* Header */}
           <div className="flex items-start justify-between gap-3 mb-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <Badge variant={statusVariant[contract.status]} className="text-[9px]">
+                <Badge variant={statusVariant[contract.status] ?? 'gray'} className="text-[9px]">
                   {contract.status}
                 </Badge>
                 {contract.escrowTxInit && (
@@ -45,7 +47,7 @@ export function ContractCard({ contract, index = 0 }: ContractCardProps) {
               <div className="text-xs text-gray-500 mt-0.5">{contract.vendorEmail}</div>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-lg font-display font-semibold text-white">{formatCurrency(contract.totalValue)}</div>
+              <div className="text-lg font-mono text-white">{formatCurrency(contract.totalValue)}</div>
               <div className="text-[10px] text-gray-500">{formatCurrency(contract.totalReleased)} released</div>
             </div>
           </div>
@@ -66,27 +68,46 @@ export function ContractCard({ contract, index = 0 }: ContractCardProps) {
             </div>
           </div>
 
-          {/* Milestones preview */}
-          <div className="grid grid-cols-5 gap-1.5 mb-4">
-            {contract.milestones.map(m => (
-              <div key={m.id}
-                className={`h-1.5 rounded-full ${m.status === 'paid' || m.status === 'approved' ? 'bg-jade-400' : m.status === 'submitted' || m.status === 'under_review' ? 'bg-gold-400' : 'bg-obsidian-700'}`}
-                title={m.title}
-              />
-            ))}
-          </div>
+          {/* Milestone dots */}
+          {total > 0 && (
+            <div className="grid gap-1.5 mb-4" style={{ gridTemplateColumns: `repeat(${Math.min(total, 10)}, 1fr)` }}>
+              {contract.milestones.map(m => (
+                <div
+                  key={m.id}
+                  className={`h-1.5 rounded-full ${
+                    m.status === 'paid' || m.status === 'approved' ? 'bg-jade-400'
+                    : m.status === 'submitted' ? 'bg-gold-400'
+                    : 'bg-obsidian-700'
+                  }`}
+                  title={m.title}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Footer */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[10px] text-gray-600">
               <Clock size={10} />
-              <span>Due {formatDate(contract.deadline)}</span>
+              <span>Due {contract.deadline ? formatDate(contract.deadline) : '—'}</span>
             </div>
+
+            {/* Activate escrow button for drafts — stops link propagation */}
+            {contract.status === 'draft' && onActivate && (
+              <button
+                onClick={e => { e.preventDefault(); onActivate(contract._id) }}
+                className="flex items-center gap-1.5 text-[11px] font-medium text-gold-400 hover:text-gold-300 bg-gold-400/8 border border-gold-400/15 rounded-lg px-2.5 py-1 transition-all"
+              >
+                <Zap size={10} /> Initialize Escrow
+              </button>
+            )}
+
             {contract.escrowWallet && (
               <div className="flex items-center gap-1 text-[10px] text-sapphire-400 font-mono">
-                <span>Escrow: {contract.escrowWallet.slice(0, 6)}…</span>
+                <span>{contract.escrowWallet.slice(0, 6)}…</span>
               </div>
             )}
+
             <ChevronRight size={13} className="text-gray-600 group-hover:text-gold-400 transition-colors" />
           </div>
         </div>

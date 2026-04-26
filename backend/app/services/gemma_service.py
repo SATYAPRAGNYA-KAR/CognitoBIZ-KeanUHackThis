@@ -1,6 +1,8 @@
 """
 Gemma service for hosted Google AI inference.
-Uses the SDK when available and falls back to the official REST API otherwise.
+Uses the official REST API via httpx for async compatibility.
+The google-generativeai SDK's generate_content is synchronous and blocks the
+event loop; we always use the async REST path instead.
 """
 
 import json
@@ -11,20 +13,7 @@ import httpx
 
 from app.config.settings import get_settings
 
-try:
-    import google.generativeai as genai
-
-    GEMMA_AVAILABLE = True
-    GEMMA_IMPORT_ERROR = ""
-except Exception as exc:
-    genai = None
-    GEMMA_AVAILABLE = False
-    GEMMA_IMPORT_ERROR = str(exc)
-
 settings = get_settings()
-
-if GEMMA_AVAILABLE:
-    genai.configure(api_key=settings.google_ai_api_key)
 
 CONSTITUTIONAL_CONSTRAINTS = """
 CognitoBIZ CONSTITUTIONAL CONSTRAINTS - ALWAYS APPLY, NEVER OVERRIDE:
@@ -69,7 +58,17 @@ def _system_prompt(system_extra: str = "") -> str:
 def _extract_response_text(payload: dict[str, Any]) -> str:
     candidates = payload.get("candidates", [])
     if not candidates:
+        # Check for promptFeedback block
+        feedback = payload.get("promptFeedback", {})
+        block_reason = feedback.get("blockReason")
+        if block_reason:
+            raise RuntimeError(f"Gemma API blocked the request: {block_reason}")
         raise RuntimeError("No response candidates returned by Gemma API.")
+
+    # Handle finish reason
+    finish_reason = candidates[0].get("finishReason", "")
+    if finish_reason in ("SAFETY", "RECITATION", "OTHER"):
+        raise RuntimeError(f"Gemma API stopped generation: {finish_reason}")
 
     parts = candidates[0].get("content", {}).get("parts", [])
     text_chunks = [part.get("text", "") for part in parts if part.get("text")]
@@ -79,58 +78,61 @@ def _extract_response_text(payload: dict[str, Any]) -> str:
     return text
 
 
-async def _generate_with_rest(
+async def _generate_content(
     prompt: str,
     system_extra: str = "",
     inline_part: dict[str, Any] | None = None,
 ) -> str:
+    """Always use async REST for event-loop safety."""
     if not settings.google_ai_api_key:
         raise RuntimeError("GOOGLE_AI_API_KEY is not configured.")
 
+    model = _active_model_name()
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{_active_model_name()}:generateContent?key={settings.google_ai_api_key}"
+        f"{model}:generateContent?key={settings.google_ai_api_key}"
     )
 
-    full_prompt = f"{_system_prompt(system_extra)}\n\n{prompt}"
+    system = _system_prompt(system_extra)
 
+    # Build parts list
     parts: list[dict[str, Any]] = []
     if inline_part:
         parts.append(inline_part)
-    parts.append({"text": full_prompt})
+    parts.append({"text": prompt})
 
-    body = {
+    body: dict[str, Any] = {
+        "system_instruction": {
+            "parts": [{"text": system}]
+        },
         "contents": [
             {
                 "role": "user",
                 "parts": parts,
             }
         ],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 2048,
+        },
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(url, json=body)
-        response.raise_for_status()
-        return _extract_response_text(response.json())
-
-
-async def _generate_content(
-    prompt: str,
-    system_extra: str = "",
-    inline_part: dict[str, Any] | None = None,
-) -> str:
-    if GEMMA_AVAILABLE:
-        model = genai.GenerativeModel(
-            model_name=_active_model_name(),
-            system_instruction=_system_prompt(system_extra),
-        )
-        content: Any = prompt
-        if inline_part:
-            content = [inline_part, prompt]
-        response = model.generate_content(content)
-        return response.text.strip()
-
-    return await _generate_with_rest(prompt, system_extra, inline_part)
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.post(url, json=body)
+            if response.status_code == 400:
+                detail = response.json()
+                raise RuntimeError(f"Gemma API 400: {detail}")
+            if response.status_code == 403:
+                raise RuntimeError("Gemma API 403: Check that your GOOGLE_AI_API_KEY has access to the Gemma model.")
+            if response.status_code == 404:
+                raise RuntimeError(f"Gemma model '{model}' not found. Check GEMMA_MODEL in .env.")
+            response.raise_for_status()
+            return _extract_response_text(response.json())
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"Gemma API HTTP error {exc.response.status_code}: {exc.response.text[:500]}") from exc
+    except httpx.TimeoutException:
+        raise RuntimeError("Gemma API request timed out after 90s.")
 
 
 def _clean_json(text: str) -> str:
@@ -152,9 +154,14 @@ def _extract_json(text: str) -> str:
     if start != -1 and end != -1 and end > start:
         return text[start:end + 1]
 
-    # 3. Nothing found — return as-is and let json.loads raise a clear error
-    return text
+    # 3. Try array [ ... ]
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        return text[start:end + 1]
 
+    # 4. Nothing found — return as-is and let json.loads raise a clear error
+    return text
 
 
 async def analyze_anomaly(transaction: dict, company_context: dict) -> dict:
@@ -240,7 +247,7 @@ Analyze how this company compares to peers. Respond ONLY with valid JSON:
                 "Assess marketing investment relative to growth stage",
             ],
             "estimated_savings": {"min": 0, "max": 0, "currency": "USD"},
-            "narrative": "Benchmark data loaded from Snowflake. AI narrative unavailable — showing raw peer comparisons.",
+            "narrative": f"Benchmark data loaded from Snowflake. AI narrative unavailable — showing raw peer comparisons. Error: {str(e)}",
         }
 
 

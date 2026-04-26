@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { AlertTriangle, X, ChevronRight, TrendingUp, Lightbulb } from 'lucide-react'
+import { AlertTriangle, X, ChevronRight, TrendingUp, Lightbulb, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { formatCurrency, formatRelative } from '@/lib/utils'
 import type { AnomalyCard } from '@/types'
@@ -37,14 +37,38 @@ const severityConfig = {
 }
 
 interface AnomalyFeedProps {
+  // Accept either `data` (legacy) or `anomalies` (from useMetrics)
   data?: AnomalyCard[]
+  anomalies?: AnomalyCard[]
+  loading?: boolean
+  onDismiss?: (transactionId: string) => void
 }
 
-export function AnomalyFeed({ data = MOCK }: AnomalyFeedProps) {
-  const [items, setItems] = useState(data.filter(d => !d.dismissed))
+export function AnomalyFeed({ data, anomalies, loading, onDismiss }: AnomalyFeedProps) {
+  const source = anomalies ?? data ?? MOCK
+  const [items, setItems] = useState(source.filter(d => !d.dismissed))
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const dismiss = (id: string) => setItems(prev => prev.filter(x => x._id !== id))
+  // Sync when external data changes
+  useEffect(() => {
+    setItems(source.filter(d => !d.dismissed))
+  }, [JSON.stringify(source)])
+
+  const dismiss = (item: AnomalyCard) => {
+    setItems(prev => prev.filter(x => x._id !== item._id))
+    // Call parent dismiss with transactionId for backend sync
+    if (onDismiss) {
+      onDismiss(item.transactionId)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 size={20} className="animate-spin text-gray-600" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-2">
@@ -104,7 +128,7 @@ export function AnomalyFeed({ data = MOCK }: AnomalyFeedProps) {
                         <p className="text-[11px] text-gold-400/80 leading-relaxed">{item.suggestion}</p>
                       </div>
                       <div className="flex gap-2 pt-1">
-                        <Button size="sm" variant="ghost" onClick={() => dismiss(item._id)}>
+                        <Button size="sm" variant="ghost" onClick={() => dismiss(item)}>
                           Dismiss
                         </Button>
                         <Button size="sm" variant="secondary">Investigate</Button>

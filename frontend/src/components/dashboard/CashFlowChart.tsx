@@ -1,6 +1,7 @@
 'use client'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { formatCurrency } from '@/lib/utils'
+import { Loader2 } from 'lucide-react'
 import type { CashFlowPoint } from '@/types'
 
 const MOCK: CashFlowPoint[] = [
@@ -40,15 +41,28 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
 
 interface CashFlowChartProps {
   data?: CashFlowPoint[]
+  loading?: boolean
 }
 
-export function CashFlowChart({ data = MOCK }: CashFlowChartProps) {
-  const today = 'Apr 22'
+export function CashFlowChart({ data, loading }: CashFlowChartProps) {
+  const chartData = (data && data.length > 0) ? data : MOCK
+
+  // Find today's date label for reference line
+  const today = new Date().toISOString().slice(0, 10)
+  const todayPoint = chartData.find(d => d.date === today)
+
+  if (loading) {
+    return (
+      <div className="h-52 flex items-center justify-center">
+        <Loader2 size={20} className="animate-spin text-gray-600" />
+      </div>
+    )
+  }
 
   return (
     <div className="h-52">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="inflowGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#2dd4a0" stopOpacity={0.25} />
@@ -68,12 +82,14 @@ export function CashFlowChart({ data = MOCK }: CashFlowChartProps) {
             tickLine={false}
           />
           <Tooltip content={<CustomTooltip />} />
-          <ReferenceLine
-            x={today}
-            stroke="rgba(245,200,66,0.4)"
-            strokeDasharray="4 4"
-            label={{ value: 'Today', fill: '#f5c842', fontSize: 9, position: 'top' }}
-          />
+          {todayPoint && (
+            <ReferenceLine
+              x={today}
+              stroke="rgba(245,200,66,0.4)"
+              strokeDasharray="4 4"
+              label={{ value: 'Today', fill: '#f5c842', fontSize: 9, position: 'top' }}
+            />
+          )}
           <Area
             type="monotone"
             dataKey="inflow"

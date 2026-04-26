@@ -1,55 +1,43 @@
-"""ElevenLabs service for text-to-speech and voice discovery."""
-
-import base64
-from typing import Optional
+"""
+ElevenLabs Service — Text-to-speech for morning briefings and voice Q&A responses.
+"""
 
 import httpx
-
+import base64
+from typing import Optional
 from app.config.settings import get_settings
 
 settings = get_settings()
 
 ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
-FALLBACK_VOICE_ID = "CwhRBWXzGAHq8TQ4Fs17"
-
-
-
-class ElevenLabsConfigurationError(RuntimeError):
-    pass
 
 
 class ElevenLabsService:
     def __init__(self):
         self.api_key = settings.elevenlabs_api_key
-        self.voice_id = settings.elevenlabs_voice_id
-        self.model_id = settings.elevenlabs_model_id
-        self.headers = {
+        self.voice_id = settings.elevenlabs_voice_id or "21m00Tcm4TlvDq8ikWAM"
+
+    @property
+    def _headers(self) -> dict:
+        return {
             "xi-api-key": self.api_key,
             "Content-Type": "application/json",
         }
 
-    def _require_config(self) -> None:
-        if not self.api_key:
-            raise ElevenLabsConfigurationError("ELEVENLABS_API_KEY is not configured.")
-        if not self.voice_id:
-            raise ElevenLabsConfigurationError("ELEVENLABS_VOICE_ID is not configured.")
+    def _is_configured(self) -> bool:
+        return bool(self.api_key and self.api_key != "")
 
     async def text_to_speech(self, text: str, voice_id: Optional[str] = None) -> bytes:
-        self._require_config()
-        vid = voice_id or self.voice_id
-        try:
-            return await self._text_to_speech_request(text, vid)
-        except RuntimeError as exc:
-            message = str(exc)
-            if vid != FALLBACK_VOICE_ID and ("paid_plan_required" in message or "Free users cannot use library voices" in message):
-                return await self._text_to_speech_request(text, FALLBACK_VOICE_ID)
-            raise
+        """Convert text to speech. Returns raw mp3 bytes."""
+        if not self._is_configured():
+            # Return empty bytes in demo mode — caller handles gracefully
+            return b""
 
-    async def _text_to_speech_request(self, text: str, voice_id: str) -> bytes:
-        url = f"{ELEVENLABS_BASE}/text-to-speech/{voice_id}"
+        vid = voice_id or self.voice_id
+        url = f"{ELEVENLABS_BASE}/text-to-speech/{vid}"
         payload = {
             "text": text,
-            "model_id": self.model_id,
+            "model_id": "eleven_monolingual_v1",
             "voice_settings": {
                 "stability": 0.5,
                 "similarity_boost": 0.75,
@@ -57,62 +45,56 @@ class ElevenLabsService:
                 "use_speaker_boost": True,
             },
         }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(url, headers=self._headers, json=payload)
+            resp.raise_for_status()
+            return resp.content
 
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(url, headers=self.headers, json=payload)
-                response.raise_for_status()
-                return response.content
-        except httpx.HTTPStatusError as exc:
-            raise RuntimeError(
-                f"ElevenLabs API error: {exc.response.status_code} - {exc.response.text}"
-            ) from exc
-        except Exception as exc:
-            raise RuntimeError(f"ElevenLabs request failed: {exc}") from exc
-
-    async def text_to_speech_base64(self, text: str, voice_id: Optional[str] = None) -> str:
-        audio_bytes = await self.text_to_speech(text, voice_id=voice_id)
+    async def text_to_speech_base64(self, text: str) -> Optional[str]:
+        """Return base64-encoded mp3, or None if ElevenLabs is not configured."""
+        if not self._is_configured():
+            return None
+        audio_bytes = await self.text_to_speech(text)
+        if not audio_bytes:
+            return None
         return base64.b64encode(audio_bytes).decode("utf-8")
 
-    async def get_voices(self) -> list[dict]:
-        self._require_config()
+    async def get_voices(self) -> list:
+        if not self._is_configured():
+            return []
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
+                resp = await client.get(
                     f"{ELEVENLABS_BASE}/voices",
                     headers={"xi-api-key": self.api_key},
                 )
-                response.raise_for_status()
-                data = response.json()
-                return data.get("voices", [])
-        except httpx.HTTPStatusError as exc:
-            raise RuntimeError(
-                f"ElevenLabs API error: {exc.response.status_code} - {exc.response.text}"
-            ) from exc
-        except Exception as exc:
-            raise RuntimeError(f"ElevenLabs request failed: {exc}") from exc
+                resp.raise_for_status()
+                return resp.json().get("voices", [])
+        except Exception:
+            return []
 
-    async def generate_briefing_audio(self, script: str, voice_id: Optional[str] = None) -> dict:
+    async def generate_briefing_audio(self, script: str) -> dict:
+        """Generate audio for a briefing script. Returns base64 + metadata."""
         try:
-            audio_b64 = await self.text_to_speech_base64(script, voice_id=voice_id)
+            audio_b64 = await self.text_to_speech_base64(script)
             return {
                 "audio_base64": audio_b64,
                 "mime_type": "audio/mpeg",
                 "duration_estimate_seconds": len(script.split()) * 0.4,
                 "script": script,
-                "voice_id": voice_id or self.voice_id,
-                "model_id": self.model_id,
+                "voice_id": self.voice_id,
+                "error": None if audio_b64 else "ElevenLabs API key not configured — set ELEVENLABS_API_KEY in .env",
             }
-        except Exception as exc:
+        except Exception as e:
             return {
                 "audio_base64": None,
                 "mime_type": "audio/mpeg",
                 "duration_estimate_seconds": 0,
                 "script": script,
-                "voice_id": voice_id or self.voice_id,
-                "model_id": self.model_id,
-                "error": str(exc),
+                "voice_id": self.voice_id,
+                "error": str(e),
             }
 
 
+# Singleton
 elevenlabs_service = ElevenLabsService()

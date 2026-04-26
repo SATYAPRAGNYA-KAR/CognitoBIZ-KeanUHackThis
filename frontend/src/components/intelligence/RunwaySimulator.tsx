@@ -6,7 +6,7 @@ import { formatCurrency, cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 import { Loader2 } from 'lucide-react'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Use relative paths so requests go through the Next.js dev server (no CORS, no port issues)
 
 const FALLBACK_BASE = {
   cash: 185420,
@@ -80,7 +80,7 @@ export function RunwaySimulator() {
 
   // Seed base metrics from real dashboard API
   useEffect(() => {
-    fetch(`${API_BASE}/api/metrics`)
+    fetch(`/api/dashboard/metrics`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && (data.cash_position || data.burn_rate)) {
@@ -147,7 +147,7 @@ export function RunwaySimulator() {
     setGemmaLoading(true)
     setGemmaResult(null)
     try {
-      const res = await fetch(`${API_BASE}/api/intelligence/runway-simulate`, {
+      const res = await fetch(`/api/intelligence/runway-simulate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

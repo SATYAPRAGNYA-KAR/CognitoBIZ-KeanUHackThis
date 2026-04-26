@@ -9,66 +9,94 @@ import { Badge } from '@/components/ui/index'
 import { useContracts } from '@/hooks/useContracts'
 import { Plus, FileText, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'react-hot-toast'
 
 export default function ContractsPage() {
-  const { contracts, loading, createContract } = useContracts()
+  const { contracts, loading, fetchContracts, createContract, activateContract } = useContracts()
   const [showCreator, setShowCreator] = useState(false)
   const [creating, setCreating] = useState(false)
 
-  const handleCreate = async (description: string, vendorEmail?: string, vendorWallet?: string) => {
+  // Called by ContractCreator after the API roundtrip succeeds
+  const handleSubmit = async (description: string, vendorEmail?: string) => {
     setCreating(true)
     try {
-      await createContract(description, vendorEmail, vendorWallet)
+      await createContract(description, vendorEmail)
       setShowCreator(false)
+      toast.success('WorkContract created')
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to create contract')
     } finally {
       setCreating(false)
     }
   }
 
-  const active = contracts.filter((contract) => contract.status === 'active')
-  const draft = contracts.filter((contract) => contract.status === 'draft')
-  const completed = contracts.filter((contract) => contract.status === 'completed')
+  const handleActivate = async (contractId: string) => {
+    try {
+      await activateContract(contractId)
+      toast.success('Escrow initialized on Solana Devnet ✓')
+      await fetchContracts()
+    } catch (e: any) {
+      toast.error(e.message || 'Activation failed')
+    }
+  }
+
+  const active = contracts.filter(c => c.status === 'active')
+  const draft = contracts.filter(c => c.status === 'draft')
+  const completed = contracts.filter(c => c.status === 'completed')
 
   return (
     <div className="flex flex-col min-h-screen">
-      <TopBar title="WorkContracts" subtitle="Milestone-gated vendor payments | Solana escrow" />
+      <TopBar title="WorkContracts" subtitle="Milestone-gated vendor payments · Solana escrow" />
       <div className="p-6 space-y-5">
+        {/* Header row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Badge variant="jade">{active.length} active</Badge>
             <Badge variant="gold">{draft.length} draft</Badge>
             <Badge variant="gray">{completed.length} completed</Badge>
           </div>
-          <Button variant="gold" icon={<Plus size={14} />} onClick={() => setShowCreator(true)}>
+          <Button
+            variant="gold"
+            icon={<Plus size={14} />}
+            onClick={() => setShowCreator(true)}
+          >
             New WorkContract
           </Button>
         </div>
 
+        {/* Creator panel */}
         <AnimatePresence>
-          {showCreator ? (
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-              <Card title="Generate WorkContract" subtitle="Describe the work and Gemma 4 structures it into milestones">
+          {showCreator && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <Card
+                title="Generate WorkContract"
+                subtitle="Describe the work in plain English — Gemma 4 structures milestones and validates market rates"
+              >
                 <ContractCreator
-                  onSubmit={handleCreate}
+                  onSubmit={handleSubmit}
                   onCancel={() => setShowCreator(false)}
                   loading={creating}
                 />
               </Card>
             </motion.div>
-          ) : null}
+          )}
         </AnimatePresence>
 
         {loading ? (
           <div className="flex items-center justify-center py-20 text-gray-500">
             <Loader2 size={20} className="animate-spin mr-2" />
-            Loading contracts...
+            Loading contracts…
           </div>
         ) : contracts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <FileText size={40} className="text-gray-700 mb-4" />
             <p className="text-gray-400 font-medium mb-1">No WorkContracts yet</p>
             <p className="text-sm text-gray-600 mb-6">
-              Describe a task in plain English and Gemma 4 generates the milestone structure.
+              Describe a task in plain English — Gemma 4 generates the milestone structure and validates market rates.
             </p>
             <Button variant="gold" icon={<Plus size={14} />} onClick={() => setShowCreator(true)}>
               Create your first contract
@@ -76,38 +104,38 @@ export default function ContractsPage() {
           </div>
         ) : (
           <div className="space-y-5">
-            {active.length > 0 ? (
+            {active.length > 0 && (
               <section>
                 <h3 className="text-xs text-gray-500 uppercase tracking-widest mb-3">Active</h3>
                 <div className="grid grid-cols-1 gap-4">
-                  {active.map((contract) => (
-                    <ContractCard key={contract._id} contract={contract} />
+                  {active.map((c, i) => (
+                    <ContractCard key={c._id} contract={c} index={i} onActivate={handleActivate} />
                   ))}
                 </div>
               </section>
-            ) : null}
-
-            {draft.length > 0 ? (
+            )}
+            {draft.length > 0 && (
               <section>
-                <h3 className="text-xs text-gray-500 uppercase tracking-widest mb-3">Draft | Awaiting Escrow Lock</h3>
+                <h3 className="text-xs text-gray-500 uppercase tracking-widest mb-3">
+                  Draft — Awaiting Escrow Lock
+                </h3>
                 <div className="grid grid-cols-1 gap-4">
-                  {draft.map((contract) => (
-                    <ContractCard key={contract._id} contract={contract} />
+                  {draft.map((c, i) => (
+                    <ContractCard key={c._id} contract={c} index={i} onActivate={handleActivate} />
                   ))}
                 </div>
               </section>
-            ) : null}
-
-            {completed.length > 0 ? (
+            )}
+            {completed.length > 0 && (
               <section>
                 <h3 className="text-xs text-gray-500 uppercase tracking-widest mb-3">Completed</h3>
                 <div className="grid grid-cols-1 gap-4">
-                  {completed.map((contract) => (
-                    <ContractCard key={contract._id} contract={contract} />
+                  {completed.map((c, i) => (
+                    <ContractCard key={c._id} contract={c} index={i} />
                   ))}
                 </div>
               </section>
-            ) : null}
+            )}
           </div>
         )}
       </div>

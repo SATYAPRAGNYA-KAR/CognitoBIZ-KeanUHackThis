@@ -2,7 +2,7 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { formatCurrency } from '@/lib/utils'
 import type { ExpenseCategory } from '@/types'
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-react'
 
 const MOCK: ExpenseCategory[] = [
   { category: 'Infrastructure', amount: 8200, percentage: 34, trend: 'up' },
@@ -34,10 +34,20 @@ const TrendIcon = ({ trend }: { trend: string }) => {
 
 interface ExpenseBreakdownProps {
   data?: ExpenseCategory[]
+  loading?: boolean
 }
 
-export function ExpenseBreakdown({ data = MOCK }: ExpenseBreakdownProps) {
-  const total = data.reduce((s, d) => s + d.amount, 0)
+export function ExpenseBreakdown({ data, loading }: ExpenseBreakdownProps) {
+  const displayData = (data && data.length > 0) ? data : MOCK
+  const total = displayData.reduce((s, d) => s + d.amount, 0)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <Loader2 size={20} className="animate-spin text-gray-600" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-4 items-center">
@@ -45,9 +55,9 @@ export function ExpenseBreakdown({ data = MOCK }: ExpenseBreakdownProps) {
       <div className="w-32 h-32 shrink-0 relative">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} cx="50%" cy="50%" innerRadius={38} outerRadius={56}
+            <Pie data={displayData} cx="50%" cy="50%" innerRadius={38} outerRadius={56}
               dataKey="amount" strokeWidth={0}>
-              {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              {displayData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
           </PieChart>
@@ -61,7 +71,7 @@ export function ExpenseBreakdown({ data = MOCK }: ExpenseBreakdownProps) {
 
       {/* Legend */}
       <div className="flex-1 space-y-1.5">
-        {data.map((d, i) => (
+        {displayData.map((d, i) => (
           <div key={d.category} className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
             <span className="text-[11px] text-gray-400 flex-1 truncate">{d.category}</span>

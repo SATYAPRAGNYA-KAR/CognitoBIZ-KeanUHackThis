@@ -9,10 +9,11 @@ from pydantic import BaseModel, Field
 from app.config.mongodb import get_db
 from app.middleware.auth import optional_auth
 from app.services import gemma_service
-from app.services.elevenlabs_service import (
-    ElevenLabsConfigurationError,
-    elevenlabs_service,
-)
+# from app.services.elevenlabs_service import (
+#     ElevenLabsConfigurationError,
+#     elevenlabs_service,
+# )
+from app.services.elevenlabs_service import elevenlabs_service
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
