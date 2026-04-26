@@ -5,6 +5,7 @@ export interface DashboardMetrics {
   runway: number
   momRevenueGrowth: number
   pendingApprovalsCount: number
+  lastUpdated?: string   // ← Add this
 }
 
 export interface CashFlowPoint {
@@ -175,9 +176,12 @@ export interface DocumentExtraction {
 // ─── Notifications ────────────────────────────────────────────────────────────
 export interface Notification {
   _id: string
-  type: 'approval_required' | 'anomaly' | 'milestone_submitted' | 'payment_released' | 'renewal' | 'guardrail'
+  companyId: string
+  userId?: string
+  type: 'approval_required' | 'anomaly' | 'milestone_submitted' | 'payment_released' | 'renewal' | 'guardrail' | 'hitl' | 'payment' | 'milestone'
   title: string
   message: string
+  severity?: 'info' | 'success' | 'warning' | 'error'
   read: boolean
   createdAt: string
   link?: string

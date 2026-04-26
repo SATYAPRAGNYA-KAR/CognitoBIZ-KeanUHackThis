@@ -14,6 +14,7 @@ from app.routers.guardrails import router as guardrails_router
 from app.routers.voice import router as voice_router
 from app.routers.audit import router as audit_router
 from app.routers.company import notifications_router, company_router
+from app.routers.payments import router as payments_router
 
 settings = get_settings()
 
@@ -50,7 +51,7 @@ app.include_router(voice_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(company_router, prefix="/api")
-
+app.include_router(payments_router, prefix="/api")
 
 @app.get("/")
 async def root():
