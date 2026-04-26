@@ -3,32 +3,18 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/index'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatCurrency, cn } from '@/lib/utils'
 import { TrendingUp, TrendingDown, Minus, ExternalLink, Loader2 } from 'lucide-react'
 import type { BenchmarkResult } from '@/types'
 
-const MOCK_RESULT: BenchmarkResult = {
-  metrics: [
-    { category: 'Infrastructure', yourValue: 8200, peerAvg: 5100, unit: '/mo', status: 'above', delta: 61 },
-    { category: 'Payroll %', yourValue: 54, peerAvg: 61, unit: '% of burn', status: 'below', delta: -11 },
-    { category: 'Marketing', yourValue: 1200, peerAvg: 3400, unit: '/mo', status: 'below', delta: -65 },
-    { category: 'Legal', yourValue: 400, peerAvg: 380, unit: '/mo', status: 'on-par', delta: 5 },
-    { category: 'Software', yourValue: 1000, peerAvg: 920, unit: '/mo', status: 'on-par', delta: 9 },
-  ],
-  narrative: 'Your infrastructure spend is the clearest optimization opportunity at 61% above peer average. Marketing significantly underinvested — companies at your stage typically spend 2.8× more. Payroll efficiency is strong.',
-  recommendations: [
-    'Rightsize EC2 instances — potential savings $1,800–2,400/mo',
-    'Review unused S3 buckets and auto-scaling thresholds',
-    'Consider doubling marketing spend to match peer investment',
-  ],
-  dataSource: 'Snowflake Marketplace · Cybersyn + SEC Filings · Seed-stage SaaS (n=847)',
-}
+// Calls go through the Next.js proxy route — no direct backend calls from the browser
 
 const statusConfig = {
   above: { color: '#ff6b35', icon: TrendingUp, label: 'Above peers', badgeVariant: 'ember' as const },
   below: { color: '#2dd4a0', icon: TrendingDown, label: 'Below peers', badgeVariant: 'jade' as const },
   'on-par': { color: '#6b7280', icon: Minus, label: 'On par', badgeVariant: 'gray' as const },
+  on_par: { color: '#6b7280', icon: Minus, label: 'On par', badgeVariant: 'gray' as const },
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -47,15 +33,57 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
+function normaliseBenchmarkResponse(data: any): BenchmarkResult {
+  const analysis = data.analysis || {}
+  const categories = (analysis.categories || []).map((c: any) => {
+    const rawStatus = (c.status || 'on_par').replace('_', '-') as 'above' | 'below' | 'on-par'
+    return {
+      category: c.name,
+      yourValue: c.company_value ?? 0,
+      peerAvg: c.peer_avg ?? 0,
+      unit: c.company_value > 100 ? '/mo' : '%',
+      status: rawStatus,
+      delta: Math.round(c.variance_pct ?? 0),
+    }
+  })
+
+  // If API returned no categories (empty company spend), build from peer data directly
+  // so the chart is still useful
+  const peerFallback = Object.entries(data.peer_data || {}).map(([name, vals]: any) => ({
+    category: name,
+    yourValue: 0,
+    peerAvg: vals.avg ?? 0,
+    unit: '/mo',
+    status: 'below' as const,
+    delta: -100,
+  }))
+
+  return {
+    metrics: categories.length > 0 ? categories : peerFallback,
+    narrative: analysis.narrative || 'No narrative available.',
+    recommendations: analysis.top_recommendations || [],
+    dataSource: `Snowflake Marketplace · ${data.industry ?? 'SaaS'} · ${data.stage ?? 'seed'} stage`,
+  }
+}
+
 export function BenchmarkView() {
   const [result, setResult] = useState<BenchmarkResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const runBenchmark = async () => {
     setLoading(true)
-    await new Promise(r => setTimeout(r, 1800))
-    setResult(MOCK_RESULT)
-    setLoading(false)
+    setError(null)
+    try {
+      const res = await fetch('/api/intelligence/benchmark')
+      if (!res.ok) throw new Error(`API error ${res.status}`)
+      const data = await res.json()
+      setResult(normaliseBenchmarkResponse(data))
+    } catch (e: any) {
+      setError(e.message || 'Failed to load benchmark data')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (!result) {
@@ -66,19 +94,20 @@ export function BenchmarkView() {
         </div>
         <div className="text-center">
           <p className="text-white font-medium mb-1">Peer Benchmarking</p>
-          <p className="text-gray-500 text-sm max-w-xs">Compare your metrics against 847 seed-stage SaaS companies using Snowflake Marketplace data.</p>
+          <p className="text-gray-500 text-sm max-w-xs">Compare your metrics against seed-stage SaaS companies using live Snowflake Marketplace data.</p>
         </div>
+        {error && <p className="text-ember-400 text-xs">{error}</p>}
         <Button variant="gold" loading={loading} onClick={runBenchmark} icon={<TrendingUp size={14} />}>
           Run Benchmark Analysis
         </Button>
-        <p className="text-[10px] text-gray-600">Data via Snowflake · Cybersyn · SEC Filings</p>
+        <p className="text-[10px] text-gray-600">Data via Snowflake · Economic Indicators · SEC Filings</p>
       </div>
     )
   }
 
   const chartData = result.metrics.map(m => ({
     category: m.category,
-    You: m.yourValue > 100 ? m.yourValue : m.yourValue,
+    You: m.yourValue,
     'Peer Avg': m.peerAvg,
   }))
 
@@ -104,7 +133,8 @@ export function BenchmarkView() {
       {/* Metric rows */}
       <div className="space-y-2">
         {result.metrics.map((m, i) => {
-          const cfg = statusConfig[m.status]
+          const statusKey = m.status.replace('_', '-') as keyof typeof statusConfig
+          const cfg = statusConfig[statusKey] || statusConfig['on-par']
           return (
             <motion.div key={m.category} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.07 }}
               className="flex items-center gap-3 p-2 rounded-xl hover:bg-obsidian-800/40 transition-colors">
@@ -125,15 +155,17 @@ export function BenchmarkView() {
       </div>
 
       {/* Recommendations */}
-      <div className="space-y-1.5">
-        <span className="text-[10px] text-gray-600 uppercase tracking-widest">Top Recommendations</span>
-        {result.recommendations.map((r, i) => (
-          <div key={i} className="flex items-start gap-2">
-            <span className="text-gold-400 text-[10px] mt-0.5 shrink-0">{i + 1}.</span>
-            <p className="text-[11px] text-gray-400">{r}</p>
-          </div>
-        ))}
-      </div>
+      {result.recommendations.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-[10px] text-gray-600 uppercase tracking-widest">Top Recommendations</span>
+          {result.recommendations.map((r, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <span className="text-gold-400 text-[10px] mt-0.5 shrink-0">{i + 1}.</span>
+              <p className="text-[11px] text-gray-400">{r}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Data source */}
       <div className="flex items-center gap-1.5 text-[10px] text-gray-600">

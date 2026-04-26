@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
 
-_env_file = Path(__file__).resolve().parents[2] / ".env"
+_env_file = Path(__file__).resolve().parents[1] / ".env"
 
 class Settings(BaseSettings):
     # Auth0
@@ -49,8 +49,8 @@ class Settings(BaseSettings):
 
     # App
     frontend_url: str = "http://localhost:3000"
-    app_base_url: str = "http://localhost:5000"
-    port: int = 5000
+    app_base_url: str = "http://localhost:8000"
+    port: int = 8000
     environment: str = "development"
 
     class Config:

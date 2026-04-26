@@ -1,15 +1,21 @@
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from auth0_server_python.auth_types import LogoutOptions, StartInteractiveLoginOptions
-
 from app.config.settings import get_settings
 from app.services.auth0_service import (
     Auth0ConfigurationError,
+    AUTH0_SDK_AVAILABLE,
     apply_auth0_cookies,
     get_auth0_client,
     get_auth0_user,
 )
+
+# Only import SDK types if the package is available
+if AUTH0_SDK_AVAILABLE:
+    from auth0_server_python.auth_types import LogoutOptions, StartInteractiveLoginOptions
+else:
+    LogoutOptions = None  # type: ignore[assignment,misc]
+    StartInteractiveLoginOptions = None  # type: ignore[assignment,misc]
 
 router = APIRouter(tags=["auth"])
 api_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,6 +23,11 @@ api_router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.get("/login")
 async def login(request: Request):
+    if not AUTH0_SDK_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Auth0 SDK not installed. Run: pip install 'auth0-server-python>=1.0.0b1,<2'",
+        )
     try:
         url = await get_auth0_client().start_interactive_login(
             options=StartInteractiveLoginOptions(
@@ -33,6 +44,8 @@ async def login(request: Request):
 
 @router.get("/callback")
 async def callback(request: Request):
+    if not AUTH0_SDK_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Auth0 SDK not installed.")
     settings = get_settings()
     try:
         await get_auth0_client().complete_interactive_login(
@@ -50,6 +63,8 @@ async def callback(request: Request):
 
 @router.get("/logout")
 async def logout(request: Request):
+    if not AUTH0_SDK_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Auth0 SDK not installed.")
     settings = get_settings()
     return_to = settings.frontend_url.rstrip("/")
     try:

@@ -41,8 +41,7 @@ export function DocumentIntelligence() {
       formData.append('file', file)
       formData.append('doc_type', 'invoice') // default, could be made selectable
 
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${API_URL}/api/intelligence/analyze-document`, {
+      const res = await fetch('/api/intelligence/analyze-document', {
         method: 'POST',
         body: formData,
         // Don't set Content-Type — browser sets it with boundary for multipart

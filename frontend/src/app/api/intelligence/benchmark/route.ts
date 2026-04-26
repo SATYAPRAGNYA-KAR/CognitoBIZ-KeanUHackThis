@@ -1,24 +1,22 @@
 import { NextResponse } from 'next/server'
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
   process.env.API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
   'http://localhost:8000'
 
 export async function GET() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/voice/briefing`, {
+    const response = await fetch(`${API_BASE_URL}/api/intelligence/benchmark`, {
       cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-      },
+      headers: { Accept: 'application/json' },
     })
 
     const data = await response.json().catch(() => null)
 
     if (!response.ok) {
       return NextResponse.json(
-        data || { detail: 'Failed to fetch morning briefing.' },
+        data || { detail: 'Failed to fetch benchmark data.' },
         { status: response.status }
       )
     }
@@ -26,7 +24,7 @@ export async function GET() {
     return NextResponse.json(data)
   } catch {
     return NextResponse.json(
-      { detail: 'Backend voice service is unavailable right now.' },
+      { detail: 'Backend intelligence service is unavailable right now.' },
       { status: 503 }
     )
   }

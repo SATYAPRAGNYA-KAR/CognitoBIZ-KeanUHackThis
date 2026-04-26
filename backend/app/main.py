@@ -176,7 +176,7 @@ async def root():
     <body>
       <main class="card">
         <p class="eyebrow">CognitoBIZ AI</p>
-        <h1>Backend is live on port 5000.</h1>
+        <h1>Backend is live on port 8000.</h1>
         <p>
           The FastAPI backend is running. Use the links below to sign in with Auth0,
           inspect the API, or verify the current session.

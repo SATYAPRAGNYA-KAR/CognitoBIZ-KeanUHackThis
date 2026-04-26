@@ -137,6 +137,26 @@ def _clean_json(text: str) -> str:
     return re.sub(r"```json\s*|\s*```", "", text).strip()
 
 
+def _extract_json(text: str) -> str:
+    """
+    Robustly extract a JSON object from a Gemma response.
+    Handles markdown code fences, leading/trailing prose, and stray characters.
+    """
+    # 1. Strip markdown code fences (```json ... ``` or ``` ... ```)
+    text = re.sub(r"```(?:json)?\s*", "", text).strip()
+    text = re.sub(r"```\s*$", "", text).strip()
+
+    # 2. Find the outermost { ... } block
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start:end + 1]
+
+    # 3. Nothing found — return as-is and let json.loads raise a clear error
+    return text
+
+
+
 async def analyze_anomaly(transaction: dict, company_context: dict) -> dict:
     prompt = f"""
 Company context: {json.dumps(company_context, indent=2)}
@@ -156,7 +176,7 @@ Is this transaction anomalous? Respond ONLY with valid JSON:
             prompt,
             "You are the CFO Agent for a startup. Analyze transactions for anomalies.",
         )
-        return json.loads(_clean_json(text))
+        return json.loads(_extract_json(text))
     except Exception as e:
         return {
             "is_anomaly": False,
@@ -173,7 +193,7 @@ Company profile: {json.dumps(company_context, indent=2)}
 Company metrics: {json.dumps(company_metrics, indent=2)}
 Peer benchmark data: {json.dumps(peer_data, indent=2)}
 
-Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
+Analyze how this company compares to peers. Respond ONLY with valid JSON:
 {{
   "categories": [
     {{
@@ -185,13 +205,9 @@ Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
       "insight": "string"
     }}
   ],
-  "top_recommendations": ["string", "string", "string"],
-  "estimated_savings": {{
-    "min": number,
-    "max": number,
-    "currency": "USD"
-  }},
-  "narrative": "string (2-3 paragraph executive summary)"
+  "top_recommendations": ["string"],
+  "estimated_savings": {{"min": number, "max": number, "currency": "USD"}},
+  "narrative": "string (2-3 sentences for the founder)"
 }}
 """
     try:
@@ -199,13 +215,32 @@ Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
             prompt,
             "You are the CFO Agent. Produce structured benchmark analysis.",
         )
-        return json.loads(_clean_json(text))
+        return json.loads(_extract_json(text))
     except Exception as e:
+        # Build a sensible fallback directly from peer_data so the chart still renders
+        categories = []
+        for cat, v in peer_data.items():
+            company_val = company_metrics.get(cat, 0)
+            peer_avg = v.get("avg", 0)
+            variance = round((company_val - peer_avg) / peer_avg * 100, 1) if peer_avg else 0
+            status = "above" if variance > 5 else ("below" if variance < -5 else "on_par")
+            categories.append({
+                "name": cat,
+                "company_value": company_val,
+                "peer_avg": peer_avg,
+                "status": status,
+                "variance_pct": variance,
+                "insight": f"Peer average is ${peer_avg:,.0f}/mo.",
+            })
         return {
-            "categories": [],
-            "top_recommendations": [f"Analysis unavailable: {str(e)}"],
+            "categories": categories,
+            "top_recommendations": [
+                "Review infrastructure spend vs peer average",
+                "Compare payroll ratio against stage benchmarks",
+                "Assess marketing investment relative to growth stage",
+            ],
             "estimated_savings": {"min": 0, "max": 0, "currency": "USD"},
-            "narrative": "Benchmarking data could not be processed. Please try again.",
+            "narrative": "Benchmark data loaded from Snowflake. AI narrative unavailable — showing raw peer comparisons.",
         }
 
 
@@ -229,7 +264,7 @@ Provide a runway simulation analysis. Respond ONLY with valid JSON:
             prompt,
             "You are a startup CFO advisor. Provide concise runway analysis.",
         )
-        return json.loads(_clean_json(text))
+        return json.loads(_extract_json(text))
     except Exception as e:
         return {
             "current_runway_months": 0,
@@ -271,7 +306,7 @@ Respond ONLY with valid JSON:
             f"You are analyzing a {doc_type} document for a startup founder.",
             inline_part=inline_part,
         )
-        return json.loads(_clean_json(text))
+        return json.loads(_extract_json(text))
     except Exception as e:
         return {
             "vendor": None,
@@ -324,7 +359,7 @@ Rules:
         prompt,
         "You are a contract generation agent. Create detailed, fair, verifiable milestones.",
     )
-    return json.loads(_clean_json(text))
+    return json.loads(_extract_json(text))
 
 
 async def verify_milestone_evidence(milestone: dict, evidence: list) -> dict:
@@ -352,7 +387,7 @@ Review each requirement against submitted evidence. Respond ONLY with valid JSON
             prompt,
             "You are reviewing milestone evidence for a WorkContract.",
         )
-        return json.loads(_clean_json(text))
+        return json.loads(_extract_json(text))
     except Exception as e:
         return {
             "checks": [],
@@ -436,7 +471,7 @@ Respond ONLY with valid JSON:
 """
     try:
         text = await _generate_content(prompt)
-        return json.loads(_clean_json(text))
+        return json.loads(_extract_json(text))
     except Exception:
         return {"goodhart_violation": False, "reason": "Check unavailable", "severity": "none"}
 

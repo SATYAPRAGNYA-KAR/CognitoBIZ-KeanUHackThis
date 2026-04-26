@@ -3,6 +3,6 @@
   "private": true,
   "scripts": {
     "dev": "powershell -ExecutionPolicy Bypass -File ./dev.ps1",
-    "dev:backend": "powershell -NoProfile -Command \"Set-Location ./backend; python -m uvicorn app.main:app --host 127.0.0.1 --port 5000\""
+    "dev:backend": "powershell -NoProfile -Command \"Set-Location ./backend; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000\""
   }
 }

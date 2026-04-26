@@ -14,11 +14,11 @@ if (-not (Test-Path $backendPath)) {
     throw "Backend folder not found at $backendPath"
 }
 
-Write-Host "Starting backend on http://localhost:5000 ..." -ForegroundColor Green
+Write-Host "Starting backend on http://localhost:8000 ..." -ForegroundColor Green
 Start-Process powershell -ArgumentList @(
     "-NoExit",
     "-Command",
-    "Set-Location '$backendPath'; python -m uvicorn app.main:app --host 127.0.0.1 --port 5000"
+    "Set-Location '$backendPath'; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 )
 
 if (Test-Path $frontendPackageJson) {

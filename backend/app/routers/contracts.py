@@ -6,7 +6,10 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from app.config.mongodb import get_db
 from app.middleware.auth import optional_auth
-from app.services import gemma_service, solana_service, guardrail_service
+# from app.services import gemma_service, solana_service, guardrail_service
+from app.services import gemma_service
+from app.services.solana_service import solana_service
+from app.services.guardrail_service import guardrail_service
 from app.models.schemas import (
     Contract, Milestone, AuditEntry, MilestoneStatus,
     ContractStatus, Notification, NotificationType

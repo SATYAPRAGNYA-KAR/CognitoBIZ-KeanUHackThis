@@ -3,12 +3,24 @@ import time
 from typing import Any, Optional
 
 import httpx
-from auth0_server_python.auth_server.server_client import ServerClient
-from auth0_server_python.auth_types import StateData, TransactionData
-from auth0_server_python.store.abstract import AbstractDataStore
 from fastapi import Request, Response
 
 from app.config.settings import get_settings
+
+# ---------------------------------------------------------------------------
+# Optional SDK — graceful degradation when auth0-server-python is not installed
+# ---------------------------------------------------------------------------
+try:
+    from auth0_server_python.auth_server.server_client import ServerClient
+    from auth0_server_python.auth_types import StateData, TransactionData
+    from auth0_server_python.store.abstract import AbstractDataStore
+    AUTH0_SDK_AVAILABLE = True
+except ModuleNotFoundError:
+    ServerClient = None  # type: ignore[assignment,misc]
+    StateData = None  # type: ignore[assignment]
+    TransactionData = None  # type: ignore[assignment]
+    AbstractDataStore = object  # type: ignore[assignment,misc]
+    AUTH0_SDK_AVAILABLE = False
 
 
 settings = get_settings()
@@ -36,6 +48,8 @@ def _extract_request(options: dict[str, Any] | None = None, **kwargs: Any) -> Re
 
 
 class CookieStore(AbstractDataStore):
+    """Cookie-backed session store for the Auth0 SDK."""
+
     def __init__(self, secret: str, cookie_name: str, max_age: int, model: type[Any]):
         super().__init__({"secret": secret})
         self.cookie_name = cookie_name
@@ -91,7 +105,13 @@ class CookieStore(AbstractDataStore):
 
 
 @lru_cache()
-def get_auth0_client() -> ServerClient:
+def get_auth0_client() -> Any:
+    if not AUTH0_SDK_AVAILABLE:
+        raise Auth0ConfigurationError(
+            "auth0-server-python SDK is not installed. "
+            "Run: pip install 'auth0-server-python>=1.0.0b1,<2'"
+        )
+
     current_settings = get_settings()
     missing = []
     if not current_settings.auth0_domain:
