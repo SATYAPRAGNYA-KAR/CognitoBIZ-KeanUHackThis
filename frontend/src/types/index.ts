@@ -82,6 +82,7 @@ export interface Contract {
   title: string
   vendorId: string | null
   vendorEmail: string
+  vendorWallet?: string | null
   status: ContractStatus
   totalValue: number
   currency: string
@@ -153,7 +154,23 @@ export interface BenchmarkRow {
   peerP25: number
   peerP75: number
   delta: number
-  status: 'above' | 'below' | 'on_par'
+  status: 'above' | 'below' | 'on-par'
+}
+
+export interface BenchmarkMetric {
+  category: string
+  yourValue: number
+  peerAvg: number
+  unit: string
+  delta: number
+  status: 'above' | 'below' | 'on-par'
+}
+
+export interface BenchmarkResult {
+  metrics: BenchmarkMetric[]
+  narrative: string
+  recommendations: string[]
+  dataSource: string
 }
 
 export interface DocumentExtraction {

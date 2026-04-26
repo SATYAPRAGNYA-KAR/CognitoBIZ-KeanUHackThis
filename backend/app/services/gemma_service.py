@@ -1,23 +1,33 @@
 """
-Gemma 4 Service — All AI interactions go through this module.
-Uses Google Generative AI SDK with constitutional constraints injected
-into every system prompt.
+Gemma service for hosted Google AI inference.
+Uses the SDK when available and falls back to the official REST API otherwise.
 """
 
 import json
 import re
-from typing import Optional
-from urllib import response
-import google.generativeai as genai
+from typing import Any
+
+import httpx
+
 from app.config.settings import get_settings
+
+try:
+    import google.generativeai as genai
+
+    GEMMA_AVAILABLE = True
+    GEMMA_IMPORT_ERROR = ""
+except Exception as exc:
+    genai = None
+    GEMMA_AVAILABLE = False
+    GEMMA_IMPORT_ERROR = str(exc)
 
 settings = get_settings()
 
-# Configure the SDK
-genai.configure(api_key=settings.google_ai_api_key)
+if GEMMA_AVAILABLE:
+    genai.configure(api_key=settings.google_ai_api_key)
 
 CONSTITUTIONAL_CONSTRAINTS = """
-CognitoBIZ CONSTITUTIONAL CONSTRAINTS — ALWAYS APPLY, NEVER OVERRIDE:
+CognitoBIZ CONSTITUTIONAL CONSTRAINTS - ALWAYS APPLY, NEVER OVERRIDE:
 
 1. NEVER suggest eliminating, firing, or removing human roles as a cost-cutting
    measure without explicitly labeling this as a "Human Decision Required" item.
@@ -42,24 +52,92 @@ CognitoBIZ CONSTITUTIONAL CONSTRAINTS — ALWAYS APPLY, NEVER OVERRIDE:
 
 8. Always be honest about uncertainty. Use "approximately", "estimated", or
    "based on available data" when precision is not possible.
-"""
+""".strip()
 
 
-def _build_model(system_extra: str = "") -> genai.GenerativeModel:
+def _active_model_name() -> str:
+    return settings.gemma_model or "gemma-4-31b-it"
+
+
+def _system_prompt(system_extra: str = "") -> str:
     system = CONSTITUTIONAL_CONSTRAINTS
     if system_extra:
         system += f"\n\n{system_extra}"
-    return genai.GenerativeModel(
-        model_name=settings.gemma_model,
-        system_instruction=system,
+    return system
+
+
+def _extract_response_text(payload: dict[str, Any]) -> str:
+    candidates = payload.get("candidates", [])
+    if not candidates:
+        raise RuntimeError("No response candidates returned by Gemma API.")
+
+    parts = candidates[0].get("content", {}).get("parts", [])
+    text_chunks = [part.get("text", "") for part in parts if part.get("text")]
+    text = "".join(text_chunks).strip()
+    if not text:
+        raise RuntimeError("Gemma API returned an empty response.")
+    return text
+
+
+async def _generate_with_rest(
+    prompt: str,
+    system_extra: str = "",
+    inline_part: dict[str, Any] | None = None,
+) -> str:
+    if not settings.google_ai_api_key:
+        raise RuntimeError("GOOGLE_AI_API_KEY is not configured.")
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{_active_model_name()}:generateContent?key={settings.google_ai_api_key}"
     )
+
+    full_prompt = f"{_system_prompt(system_extra)}\n\n{prompt}"
+
+    parts: list[dict[str, Any]] = []
+    if inline_part:
+        parts.append(inline_part)
+    parts.append({"text": full_prompt})
+
+    body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": parts,
+            }
+        ],
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(url, json=body)
+        response.raise_for_status()
+        return _extract_response_text(response.json())
+
+
+async def _generate_content(
+    prompt: str,
+    system_extra: str = "",
+    inline_part: dict[str, Any] | None = None,
+) -> str:
+    if GEMMA_AVAILABLE:
+        model = genai.GenerativeModel(
+            model_name=_active_model_name(),
+            system_instruction=_system_prompt(system_extra),
+        )
+        content: Any = prompt
+        if inline_part:
+            content = [inline_part, prompt]
+        response = model.generate_content(content)
+        return response.text.strip()
+
+    return await _generate_with_rest(prompt, system_extra, inline_part)
+
+
+def _clean_json(text: str) -> str:
+    return re.sub(r"```json\s*|\s*```", "", text).strip()
 
 
 async def analyze_anomaly(transaction: dict, company_context: dict) -> dict:
-    """Analyze a single transaction for anomalies."""
-    model = _build_model(
-        "You are the CFO Agent for a startup. Analyze transactions for anomalies."
-    )
     prompt = f"""
 Company context: {json.dumps(company_context, indent=2)}
 Transaction: {json.dumps(transaction, indent=2)}
@@ -74,15 +152,11 @@ Is this transaction anomalous? Respond ONLY with valid JSON:
 }}
 """
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        # Strip markdown code fences if present
-        text = response.text.strip()
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text)
+        text = await _generate_content(
+            prompt,
+            "You are the CFO Agent for a startup. Analyze transactions for anomalies.",
+        )
+        return json.loads(_clean_json(text))
     except Exception as e:
         return {
             "is_anomaly": False,
@@ -93,15 +167,7 @@ Is this transaction anomalous? Respond ONLY with valid JSON:
         }
 
 
-async def generate_benchmarking_analysis(
-    company_metrics: dict,
-    peer_data: dict,
-    company_context: dict,
-) -> dict:
-    """Generate peer benchmarking analysis."""
-    model = _build_model(
-        "You are the CFO Agent. Produce structured benchmark analysis."
-    )
+async def generate_benchmarking_analysis(company_metrics: dict, peer_data: dict, company_context: dict) -> dict:
     prompt = f"""
 Company profile: {json.dumps(company_context, indent=2)}
 Company metrics: {json.dumps(company_metrics, indent=2)}
@@ -129,13 +195,11 @@ Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
 }}
 """
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text)
+        text = await _generate_content(
+            prompt,
+            "You are the CFO Agent. Produce structured benchmark analysis.",
+        )
+        return json.loads(_clean_json(text))
     except Exception as e:
         return {
             "categories": [],
@@ -145,12 +209,7 @@ Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
         }
 
 
-async def generate_runway_simulation(
-    current_metrics: dict,
-    scenario: dict,
-) -> dict:
-    """Generate runway simulation narrative."""
-    model = _build_model("You are a startup CFO advisor. Provide concise runway analysis.")
+async def generate_runway_simulation(current_metrics: dict, scenario: dict) -> dict:
     prompt = f"""
 Current metrics: {json.dumps(current_metrics, indent=2)}
 Simulation scenario: {json.dumps(scenario, indent=2)}
@@ -166,13 +225,11 @@ Provide a runway simulation analysis. Respond ONLY with valid JSON:
 }}
 """
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text)
+        text = await _generate_content(
+            prompt,
+            "You are a startup CFO advisor. Provide concise runway analysis.",
+        )
+        return json.loads(_clean_json(text))
     except Exception as e:
         return {
             "current_runway_months": 0,
@@ -185,10 +242,6 @@ Provide a runway simulation analysis. Respond ONLY with valid JSON:
 
 
 async def analyze_document(base64_content: str, mime_type: str, doc_type: str) -> dict:
-    """Analyze an uploaded document using Gemma vision."""
-    model = _build_model(
-        f"You are analyzing a {doc_type} document for a startup founder."
-    )
     prompt = f"""
 Analyze this {doc_type} document and extract all relevant information.
 Respond ONLY with valid JSON:
@@ -207,18 +260,18 @@ Respond ONLY with valid JSON:
 }}
 """
     try:
-        response = model.generate_content([
-            {"mime_type": mime_type, "data": base64_content},
+        inline_part = {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": base64_content,
+            }
+        }
+        text = await _generate_content(
             prompt,
-        ])
-        # text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        text = response.text.strip()
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text)
-
+            f"You are analyzing a {doc_type} document for a startup founder.",
+            inline_part=inline_part,
+        )
+        return json.loads(_clean_json(text))
     except Exception as e:
         return {
             "vendor": None,
@@ -236,10 +289,6 @@ Respond ONLY with valid JSON:
 
 
 async def generate_work_contract(description: str, company_context: dict) -> dict:
-    """Generate a structured WorkContract from natural language description."""
-    model = _build_model(
-        "You are a contract generation agent. Create detailed, fair, verifiable milestones."
-    )
     prompt = f"""
 Company context: {json.dumps(company_context, indent=2)}
 Work description: {description}
@@ -271,31 +320,14 @@ Rules:
 - Total milestone values must equal total_value
 - Flag if the rate seems off-market
 """
-    try:
-        # response = model.generate_content(prompt)
-        # text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        # print("RAW MODEL OUTPUT:", repr(text))
-        # return json.loads(text)
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-
-        # Extract JSON — find the first { and last }
-        start = text.find('{')
-        end = text.rfind('}')
-        if start == -1 or end == -1:
-            raise ValueError("No JSON object found in model response")
-        text = text[start:end+1]
-
-        return json.loads(text)
-    except Exception as e:
-        raise ValueError(f"Contract generation failed: {str(e)}")
+    text = await _generate_content(
+        prompt,
+        "You are a contract generation agent. Create detailed, fair, verifiable milestones.",
+    )
+    return json.loads(_clean_json(text))
 
 
 async def verify_milestone_evidence(milestone: dict, evidence: list) -> dict:
-    """Verify submitted evidence against milestone requirements."""
-    model = _build_model(
-        "You are reviewing milestone evidence for a WorkContract."
-    )
     prompt = f"""
 Milestone requirements: {json.dumps(milestone, indent=2)}
 Submitted evidence: {json.dumps(evidence, indent=2)}
@@ -316,13 +348,11 @@ Review each requirement against submitted evidence. Respond ONLY with valid JSON
 }}
 """
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text)
+        text = await _generate_content(
+            prompt,
+            "You are reviewing milestone evidence for a WorkContract.",
+        )
+        return json.loads(_clean_json(text))
     except Exception as e:
         return {
             "checks": [],
@@ -340,10 +370,6 @@ async def generate_morning_briefing(
     upcoming_renewals: list,
     company_name: str,
 ) -> str:
-    """Generate a natural-language morning briefing script."""
-    model = _build_model(
-        "You write spoken audio scripts. Conversational, warm, professional — like a trusted CFO advisor."
-    )
     prompt = f"""
 Generate a 60-second morning briefing for {company_name}'s founder.
 
@@ -363,24 +389,16 @@ Rules:
 - Address the founder as "you" not by name
 """
     try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        return await _generate_content(
+            prompt,
+            "You write spoken audio scripts. Conversational, warm, professional - like a trusted CFO advisor.",
+        )
     except Exception as e:
         return f"Good morning. There was an issue generating your briefing: {str(e)}. Please check your dashboard for the latest updates."
 
 
-async def answer_financial_question(
-    question: str,
-    financial_context: dict,
-    conversation_history: list,
-) -> str:
-    """Answer a voice/text question about the company's financials."""
-    model = _build_model(
-        "You are a conversational CFO advisor. Answer questions about company finances clearly and concisely."
-    )
-    history_text = "\n".join(
-        [f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-6:]]
-    )
+async def answer_financial_question(question: str, financial_context: dict, conversation_history: list) -> str:
+    history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-6:]])
     prompt = f"""
 Financial context: {json.dumps(financial_context, indent=2)}
 
@@ -393,15 +411,15 @@ Answer in 2-4 conversational sentences. Be specific with numbers when available.
 Do NOT use bullet points. Speak naturally as if in a voice conversation.
 """
     try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        return await _generate_content(
+            prompt,
+            "You are a conversational CFO advisor. Answer questions about company finances clearly and concisely.",
+        )
     except Exception as e:
         return f"I couldn't process that question right now. Error: {str(e)}"
 
 
 async def check_goodhart_violation(recommendation: str) -> dict:
-    """Check if a recommendation violates Goodhart's Law."""
-    model = _build_model()
     prompt = f"""
 Review this recommendation for Goodhart's Law violations:
 "{recommendation}"
@@ -417,20 +435,13 @@ Respond ONLY with valid JSON:
 }}
 """
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            text = text[start:end+1]
-        return json.loads(text)
+        text = await _generate_content(prompt)
+        return json.loads(_clean_json(text))
     except Exception:
         return {"goodhart_violation": False, "reason": "Check unavailable", "severity": "none"}
 
 
 async def generate_recurring_optimization(recurring_payments: list, runway_months: float) -> str:
-    """Generate monthly optimization recommendation for recurring payments."""
-    model = _build_model()
     prompt = f"""
 Recurring payments: {json.dumps(recurring_payments, indent=2)}
 Current runway: {runway_months} months
@@ -443,7 +454,6 @@ Analyze these recurring payments and identify:
 Respond in 2-3 conversational sentences. Be specific about amounts.
 """
     try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        return await _generate_content(prompt)
     except Exception as e:
         return f"Optimization analysis unavailable: {str(e)}"

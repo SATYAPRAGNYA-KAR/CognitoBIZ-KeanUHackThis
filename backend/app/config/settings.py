@@ -1,18 +1,15 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
-import os
 
-_env_file = Path(__file__).resolve().parent.parent / ".env"
-
-print("ENV FILE PATH:", _env_file)
-print("ENV FILE EXISTS:", _env_file.exists())
-print("ENV FILE CONTENTS:", _env_file.read_text() if _env_file.exists() else "NOT FOUND")
-print("OS ENVIRON MONGODB_URI:", os.environ.get("MONGODB_URI", "NOT SET"))
+_env_file = Path(__file__).resolve().parents[2] / ".env"
 
 class Settings(BaseSettings):
     # Auth0
     auth0_domain: str = ""
+    auth0_client_id: str = ""
+    auth0_client_secret: str = ""
+    auth0_secret: str = ""
     auth0_audience: str = "https://api.cognitobiz.ai"
     auth0_algorithms: str = "RS256"
 
@@ -36,10 +33,14 @@ class Settings(BaseSettings):
     solana_network: str = "devnet"
     solana_rpc_url: str = "https://api.devnet.solana.com"
     solana_owner_keypair: str = ""
+    solana_owner_public_key: str = ""
+    solana_payment_mode: str = "auto"
+    solana_sol_per_usd: float = 0.0
 
     # ElevenLabs
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    elevenlabs_voice_id: str = "CwhRBWXzGAHq8TQ4Fs17"
+    elevenlabs_model_id: str = "eleven_flash_v2_5"
 
     # Plaid
     plaid_client_id: str = ""
@@ -48,6 +49,8 @@ class Settings(BaseSettings):
 
     # App
     frontend_url: str = "http://localhost:3000"
+    app_base_url: str = "http://localhost:5000"
+    port: int = 5000
     environment: str = "development"
 
     class Config:

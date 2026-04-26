@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { getAuthLoginUrl, getAuthLogoutUrl } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 import {
@@ -20,6 +21,8 @@ const nav = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const authHref = pathname.startsWith('/dashboard') ? getAuthLogoutUrl() : getAuthLoginUrl()
+  const authLabel = pathname.startsWith('/dashboard') ? 'Sign out' : 'Sign in'
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 glass border-r border-white/6 flex flex-col z-40">
@@ -57,15 +60,22 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="p-3 border-t border-white/6 space-y-1">
+        <div className="px-3 py-2 rounded-xl bg-white/3 border border-white/6">
+          <div className="text-xs font-medium text-white truncate">CognitoBIZ Workspace</div>
+          <div className="text-[10px] text-gray-500 truncate">Auth handled by backend</div>
+        </div>
         {/* Live status */}
         <div className="px-3 py-2 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-jade-400 status-live" />
           <span className="text-[10px] text-gray-500">All systems operational</span>
         </div>
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-gray-500 hover:text-gray-300 hover:bg-obsidian-800 transition-all text-sm">
+        <a
+          href={authHref}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-gray-500 hover:text-gray-300 hover:bg-obsidian-800 transition-all text-sm"
+        >
           <LogOut size={15} />
-          <span>Sign out</span>
-        </button>
+          <span>{authLabel}</span>
+        </a>
       </div>
     </aside>
   )

@@ -3,7 +3,6 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { formatCurrency } from '@/lib/utils'
 import type { CashFlowPoint } from '@/types'
 
-// Mock data — replaced by API
 const MOCK: CashFlowPoint[] = [
   { date: 'Feb 1', inflow: 18000, outflow: 14000 },
   { date: 'Feb 8', inflow: 12000, outflow: 15200 },
@@ -22,16 +21,17 @@ const MOCK: CashFlowPoint[] = [
   { date: 'May 15', inflow: 22000, outflow: 16400, projected: true },
 ]
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; color: string; value: number }>; label?: string }) => {
   if (!active || !payload?.length) return null
+
   return (
     <div className="glass-strong rounded-xl px-4 py-3 text-xs border border-white/10">
       <p className="text-gray-400 mb-2 font-medium">{label}</p>
-      {payload.map((p: any) => (
-        <div key={p.name} className="flex items-center gap-2 mb-1">
-          <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-gray-400 capitalize">{p.name}:</span>
-          <span className="text-white font-mono">{formatCurrency(p.value)}</span>
+      {payload.map((entry) => (
+        <div key={entry.name} className="flex items-center gap-2 mb-1">
+          <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
+          <span className="text-gray-400 capitalize">{entry.name}:</span>
+          <span className="text-white font-mono">{formatCurrency(entry.value)}</span>
         </div>
       ))}
     </div>
@@ -44,6 +44,7 @@ interface CashFlowChartProps {
 
 export function CashFlowChart({ data = MOCK }: CashFlowChartProps) {
   const today = 'Apr 22'
+
   return (
     <div className="h-52">
       <ResponsiveContainer width="100%" height="100%">
@@ -60,13 +61,35 @@ export function CashFlowChart({ data = MOCK }: CashFlowChartProps) {
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
           <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-          <YAxis tickFormatter={v => `$${v / 1000}k`} tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
+          <YAxis
+            tickFormatter={(value: number) => `$${value / 1000}k`}
+            tick={{ fontSize: 10, fill: '#6b7280' }}
+            axisLine={false}
+            tickLine={false}
+          />
           <Tooltip content={<CustomTooltip />} />
-          <ReferenceLine x={today} stroke="rgba(245,200,66,0.4)" strokeDasharray="4 4" label={{ value: 'Today', fill: '#f5c842', fontSize: 9, position: 'top' }} />
-          <Area type="monotone" dataKey="inflow" stroke="#2dd4a0" strokeWidth={2} fill="url(#inflowGrad)"
-            strokeDasharray={(d: any) => d.projected ? '4 4' : '0'} />
-          <Area type="monotone" dataKey="outflow" stroke="#ff6b35" strokeWidth={2} fill="url(#outflowGrad)"
-            strokeDasharray={(d: any) => d.projected ? '4 4' : '0'} />
+          <ReferenceLine
+            x={today}
+            stroke="rgba(245,200,66,0.4)"
+            strokeDasharray="4 4"
+            label={{ value: 'Today', fill: '#f5c842', fontSize: 9, position: 'top' }}
+          />
+          <Area
+            type="monotone"
+            dataKey="inflow"
+            stroke="#2dd4a0"
+            strokeWidth={2}
+            fill="url(#inflowGrad)"
+            strokeDasharray="0"
+          />
+          <Area
+            type="monotone"
+            dataKey="outflow"
+            stroke="#ff6b35"
+            strokeWidth={2}
+            fill="url(#outflowGrad)"
+            strokeDasharray="0"
+          />
         </AreaChart>
       </ResponsiveContainer>
     </div>

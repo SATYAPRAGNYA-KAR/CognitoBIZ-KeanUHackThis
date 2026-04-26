@@ -27,6 +27,7 @@ def get_company_id(user) -> str:
 class CreateContractRequest(BaseModel):
     description: str
     vendor_email: Optional[str] = None
+    vendor_wallet: Optional[str] = None
 
 
 class SubmitEvidenceRequest(BaseModel):
@@ -54,6 +55,7 @@ async def list_contracts(user=Depends(optional_auth)):
                 "total_value": c.get("total_value"),
                 "total_released": c.get("total_released", 0),
                 "vendor_email": c.get("vendor_email"),
+                "vendor_wallet": c.get("vendor_wallet"),
                 "milestone_count": len(c.get("milestones", [])),
                 "completed_milestones": sum(
                     1 for m in c.get("milestones", [])
@@ -113,6 +115,7 @@ async def create_contract(req: CreateContractRequest, user=Depends(optional_auth
         company_id=company_id,
         title=contract_data.get("title", "WorkContract"),
         vendor_email=req.vendor_email,
+        vendor_wallet=req.vendor_wallet,
         status=ContractStatus.draft,
         total_value=contract_data.get("total_value", 0),
         deadline=deadline,
@@ -307,7 +310,7 @@ async def approve_milestone(
 
     # Release Solana payment
     actor = user.get("sub", "owner") if user else "owner"
-    vendor_wallet = contract.get("escrow_wallet", "demo_vendor_wallet")
+    vendor_wallet = contract.get("vendor_wallet") or "demo_vendor_wallet"
 
     tx_result = await solana_service.release_milestone_payment(
         contract_id=contract_id,

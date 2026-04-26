@@ -5,6 +5,14 @@ import { Mic, MicOff, Volume2, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Message { role: 'user' | 'assistant'; text: string }
+interface BrowserSpeechRecognition {
+  continuous: boolean
+  interimResults: boolean
+  onresult: ((event: any) => void) | null
+  onend: (() => void) | null
+  start: () => void
+  stop: () => void
+}
 
 const DEMO_QA: Record<string, string> = {
   default: "Your cash position is $182,400 with 11.2 months of runway at current burn. Revenue is up 8% month-over-month. What would you like to dig into?",
@@ -26,7 +34,7 @@ export function VoiceAssistant({ onClose }: { onClose?: () => void }) {
   const [loading, setLoading] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [transcript, setTranscript] = useState('')
-  const recogRef = useRef<SpeechRecognition | null>(null)
+  const recogRef = useRef<BrowserSpeechRecognition | null>(null)
 
   const startListening = () => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
@@ -35,7 +43,7 @@ export function VoiceAssistant({ onClose }: { onClose?: () => void }) {
       return
     }
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    const recog = new SpeechRecognition()
+    const recog = new SpeechRecognition() as BrowserSpeechRecognition
     recog.continuous = false
     recog.interimResults = true
     recog.onresult = (e: any) => {

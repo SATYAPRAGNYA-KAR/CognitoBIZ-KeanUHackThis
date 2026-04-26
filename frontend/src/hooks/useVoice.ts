@@ -1,6 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { apiFetch } from '@/lib/utils'
-
 interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
@@ -16,53 +14,10 @@ export function useVoice() {
   const [error, setError] = useState<string | null>(null)
   const recognitionRef = useRef<any>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const transcriptRef = useRef('')
 
   const isSupported = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-
-  const startListening = useCallback(() => {
-    if (!isSupported) {
-      setError('Speech recognition not supported in this browser. Try Chrome.')
-      return
-    }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    const recognition = new SpeechRecognition()
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.lang = 'en-US'
-
-    recognition.onstart = () => {
-      setIsListening(true)
-      setTranscript('')
-      setError(null)
-    }
-    recognition.onresult = (event: any) => {
-      const t = Array.from(event.results)
-        .map((r: any) => r[0].transcript)
-        .join('')
-      setTranscript(t)
-    }
-    recognition.onend = async () => {
-      setIsListening(false)
-      if (transcript) {
-        await askQuestion(transcript)
-      }
-    }
-    recognition.onerror = (event: any) => {
-      setIsListening(false)
-      setError(`Microphone error: ${event.error}`)
-    }
-
-    recognitionRef.current = recognition
-    recognition.start()
-  }, [isSupported, transcript])
-
-  const stopListening = useCallback(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-    }
-    setIsListening(false)
-  }, [])
 
   const askQuestion = useCallback(async (question: string) => {
     if (!question.trim()) return
@@ -71,15 +26,25 @@ export function useVoice() {
 
     try {
       const historyForApi = conversation.map(m => ({ role: m.role, content: m.content }))
-      const data = await apiFetch<{
+      const response = await fetch('/api/voice/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question, conversation_history: historyForApi }),
+      })
+
+      const data = await response.json().catch(() => ({ detail: 'Voice request failed.' })) as {
         answer: string
         audio_base64: string | null
         mime_type: string
         error?: string
-      }>('/api/voice/ask', {
-        method: 'POST',
-        body: JSON.stringify({ question, conversation_history: historyForApi }),
-      })
+        detail?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.error || 'Voice request failed.')
+      }
 
       const assistantMessage: ConversationMessage = {
         role: 'assistant',
@@ -97,8 +62,55 @@ export function useVoice() {
     } finally {
       setIsThinking(false)
       setTranscript('')
+      transcriptRef.current = ''
     }
   }, [conversation])
+
+  const startListening = useCallback(() => {
+    if (!isSupported) {
+      setError('Speech recognition not supported in this browser. Try Chrome.')
+      return
+    }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const recognition = new SpeechRecognition()
+    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+
+    recognition.onstart = () => {
+      setIsListening(true)
+      setTranscript('')
+      transcriptRef.current = ''
+      setError(null)
+    }
+    recognition.onresult = (event: any) => {
+      const t = Array.from(event.results)
+        .map((r: any) => r[0].transcript)
+        .join('')
+      transcriptRef.current = t
+      setTranscript(t)
+    }
+    recognition.onend = async () => {
+      setIsListening(false)
+      if (transcriptRef.current) {
+        await askQuestion(transcriptRef.current)
+      }
+    }
+    recognition.onerror = (event: any) => {
+      setIsListening(false)
+      setError(`Microphone error: ${event.error}`)
+    }
+
+    recognitionRef.current = recognition
+    recognition.start()
+  }, [askQuestion, isSupported])
+
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+    }
+    setIsListening(false)
+  }, [])
 
   const playAudio = useCallback((base64: string, mimeType: string) => {
     const blob = base64ToBlob(base64, mimeType)

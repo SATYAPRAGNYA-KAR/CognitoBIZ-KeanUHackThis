@@ -1,8 +1,9 @@
 import httpx
-from fastapi import HTTPException, Depends, status
+from fastapi import HTTPException, Depends, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from app.config.settings import get_settings
+from app.services.auth0_service import get_auth0_user
 from functools import lru_cache
 
 settings = get_settings()
@@ -52,9 +53,14 @@ def verify_token(token: str) -> dict:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> dict:
-    """Extract current user from Bearer token."""
+    """Extract current user from Auth0 session or Bearer token."""
+    session_user = await get_auth0_user(request)
+    if session_user is not None:
+        return session_user
+
     if credentials is None:
         raise HTTPException(status_code=401, detail="Authorization required")
     return verify_token(credentials.credentials)
@@ -90,8 +96,13 @@ def require_role(role: str):
 
 # Optional auth — returns None if no token (for demo/dev)
 async def optional_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> dict | None:
+    session_user = await get_auth0_user(request)
+    if session_user is not None:
+        return session_user
+
     if credentials is None:
         return None
     try:

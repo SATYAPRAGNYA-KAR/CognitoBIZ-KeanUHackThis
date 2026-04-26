@@ -26,7 +26,7 @@ export function ContractCard({ contract, index = 0 }: ContractCardProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.07 }}
     >
-      <Link href={`/contracts/${contract._id}`}>
+      <Link href={`/dashboard/contracts/${contract._id}`}>
         <div className="glass rounded-2xl border border-white/6 p-5 hover:border-gold-400/20 transition-all group cursor-pointer">
           {/* Header */}
           <div className="flex items-start justify-between gap-3 mb-4">

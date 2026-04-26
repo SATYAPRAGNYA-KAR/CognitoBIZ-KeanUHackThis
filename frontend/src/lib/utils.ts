@@ -72,6 +72,26 @@ export function getMilestoneColor(status: string): string {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const ENABLE_FRONTEND_AUTH = process.env.NEXT_PUBLIC_ENABLE_FRONTEND_AUTH === 'true'
+
+async function getBrowserAccessToken(): Promise<string | undefined> {
+  if (typeof window === 'undefined') return undefined
+  if (!ENABLE_FRONTEND_AUTH) return undefined
+
+  try {
+    const res = await fetch('/api/auth/token', {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+
+    if (!res.ok) return undefined
+
+    const data = (await res.json()) as { accessToken?: string }
+    return data.accessToken
+  } catch {
+    return undefined
+  }
+}
 
 export async function apiFetch<T>(
   path: string,
@@ -82,9 +102,16 @@ export async function apiFetch<T>(
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string>),
   }
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  const resolvedToken = token || await getBrowserAccessToken()
+  if (resolvedToken) headers['Authorization'] = `Bearer ${resolvedToken}`
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers })
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Network request failed'
+    throw new Error(`Unable to reach backend at ${API_URL}. ${detail}`)
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'API error')
