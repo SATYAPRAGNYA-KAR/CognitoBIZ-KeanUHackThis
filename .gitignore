@@ -33,3 +33,6 @@ Thumbs.db
 # Solana keypairs (NEVER commit)
 *.json.keypair
 wallet.json
+
+# Environment
+.env

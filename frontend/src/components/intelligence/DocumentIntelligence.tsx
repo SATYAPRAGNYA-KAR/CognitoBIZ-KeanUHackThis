@@ -27,12 +27,55 @@ export function DocumentIntelligence() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<DocumentExtraction | null>(null)
 
+  // const handleFile = async (file: File) => {
+  //   setLoading(true)
+  //   await new Promise(r => setTimeout(r, 2200)) // simulate Gemma vision call
+  //   setResult(MOCK_RESULT)
+  //   setLoading(false)
+  //   toast.success('Document analyzed by Gemma 4')
+  // }
   const handleFile = async (file: File) => {
     setLoading(true)
-    await new Promise(r => setTimeout(r, 2200)) // simulate Gemma vision call
-    setResult(MOCK_RESULT)
-    setLoading(false)
-    toast.success('Document analyzed by Gemma 4')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('doc_type', 'invoice') // default, could be made selectable
+
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${API_URL}/api/intelligence/analyze-document`, {
+        method: 'POST',
+        body: formData,
+        // Don't set Content-Type — browser sets it with boundary for multipart
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(err.detail || 'Analysis failed')
+      }
+
+      const data = await res.json()
+
+      setResult({
+        _id: data.document_id,
+        filename: data.filename,
+        type: data.doc_type,
+        uploadedAt: new Date().toISOString(),
+        extractedData: {
+          vendor: data.extracted?.vendor,
+          amount: data.extracted?.amount,
+          dueDate: data.extracted?.due_date,
+          paymentTerms: data.extracted?.payment_terms,
+          flags: data.flags || [],
+        },
+        gemmaSummary: data.summary || '',
+        status: 'extracted',
+      })
+      toast.success('Document analyzed by Gemma!')
+    } catch (e: any) {
+      toast.error(e.message || 'Upload failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {

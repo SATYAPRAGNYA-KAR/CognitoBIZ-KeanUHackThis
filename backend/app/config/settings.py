@@ -1,6 +1,14 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+import os
 
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+
+print("ENV FILE PATH:", _env_file)
+print("ENV FILE EXISTS:", _env_file.exists())
+print("ENV FILE CONTENTS:", _env_file.read_text() if _env_file.exists() else "NOT FOUND")
+print("OS ENVIRON MONGODB_URI:", os.environ.get("MONGODB_URI", "NOT SET"))
 
 class Settings(BaseSettings):
     # Auth0
@@ -43,7 +51,7 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     class Config:
-        env_file = ".env"
+        env_file = str(_env_file)
         case_sensitive = False
         extra = "ignore"
 
