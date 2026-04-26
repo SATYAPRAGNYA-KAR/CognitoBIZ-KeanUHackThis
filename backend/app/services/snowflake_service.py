@@ -118,15 +118,26 @@ class SnowflakeService:
             rows = self._query(sql)
             print(f"Snowflake returned {len(rows)} rows")
             if rows:
-                return {
-                    row["CATEGORY"]: {
-                        "avg": float(row["PEER_AVG"]),
-                        "p25": float(row["P25"]),
-                        "p75": float(row["P75"]),
-                        "sample_size": int(row["SAMPLE_SIZE"]),
-                    }
-                    for row in rows
+                # Map Snowflake variable names to your app categories
+                category_map = {
+                    "infrastructure": "Infrastructure",
+                    "payroll": "Payroll",
+                    "marketing": "Marketing",
+                    "legal": "Legal",
+                    "software": "Software Subscriptions",
                 }
+                result = {}
+                for row in rows:
+                    raw_name = row["CATEGORY"].lower()
+                    for keyword, mapped_name in category_map.items():
+                        if keyword in raw_name:
+                            result[mapped_name] = {
+                                "avg": float(row["PEER_AVG"]),
+                                "p25": float(row["P25"]),
+                                "p75": float(row["P75"]),
+                            }
+                if result:
+                    return result
             
         print("⚠️ Falling back to mock data")
 

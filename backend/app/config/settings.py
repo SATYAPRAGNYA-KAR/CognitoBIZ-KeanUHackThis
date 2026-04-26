@@ -18,11 +18,11 @@ class Settings(BaseSettings):
     snowflake_password: str = ""
     snowflake_database: str = "COGNITOBIZ"
     snowflake_warehouse: str = "COMPUTE_WH"
-    snowflake_schema: str = "PUBLIC"
+    snowflake_schema: str = "PUBLIC_DATA_FREE"
 
     # Google AI (Gemma 4)
     google_ai_api_key: str = ""
-    gemma_model: str = "gemma-2-9b-it"
+    gemma_model: str = "gemma-4-31b-it"
 
     # Solana
     solana_network: str = "devnet"
@@ -45,8 +45,12 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"
 
 
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+def clear_settings_cache():
+    get_settings.cache_clear()

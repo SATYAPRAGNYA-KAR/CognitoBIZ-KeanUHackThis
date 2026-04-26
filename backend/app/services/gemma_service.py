@@ -7,6 +7,7 @@ into every system prompt.
 import json
 import re
 from typing import Optional
+from urllib import response
 import google.generativeai as genai
 from app.config.settings import get_settings
 
@@ -77,6 +78,7 @@ Is this transaction anomalous? Respond ONLY with valid JSON:
         text = response.text.strip()
         # Strip markdown code fences if present
         text = re.sub(r"```json\s*|\s*```", "", text).strip()
+        print("RAW MODEL OUTPUT:", repr(text))
         return json.loads(text)
     except Exception as e:
         return {
@@ -126,6 +128,7 @@ Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
     try:
         response = model.generate_content(prompt)
         text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        print("RAW MODEL OUTPUT:", repr(text))
         return json.loads(text)
     except Exception as e:
         return {
@@ -159,6 +162,7 @@ Provide a runway simulation analysis. Respond ONLY with valid JSON:
     try:
         response = model.generate_content(prompt)
         text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        print("RAW MODEL OUTPUT:", repr(text))
         return json.loads(text)
     except Exception as e:
         return {
@@ -199,6 +203,7 @@ Respond ONLY with valid JSON:
             prompt,
         ])
         text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        print("RAW MODEL OUTPUT:", repr(text))
         return json.loads(text)
     except Exception as e:
         return {
@@ -253,8 +258,20 @@ Rules:
 - Flag if the rate seems off-market
 """
     try:
+        # response = model.generate_content(prompt)
+        # text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        # print("RAW MODEL OUTPUT:", repr(text))
+        # return json.loads(text)
         response = model.generate_content(prompt)
-        text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        text = response.text.strip()
+
+        # Extract JSON — find the first { and last }
+        start = text.find('{')
+        end = text.rfind('}')
+        if start == -1 or end == -1:
+            raise ValueError("No JSON object found in model response")
+        text = text[start:end+1]
+
         return json.loads(text)
     except Exception as e:
         raise ValueError(f"Contract generation failed: {str(e)}")
@@ -287,6 +304,7 @@ Review each requirement against submitted evidence. Respond ONLY with valid JSON
     try:
         response = model.generate_content(prompt)
         text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        print("RAW MODEL OUTPUT:", repr(text))
         return json.loads(text)
     except Exception as e:
         return {
@@ -384,6 +402,7 @@ Respond ONLY with valid JSON:
     try:
         response = model.generate_content(prompt)
         text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        print("RAW MODEL OUTPUT:", repr(text))
         return json.loads(text)
     except Exception:
         return {"goodhart_violation": False, "reason": "Check unavailable", "severity": "none"}
