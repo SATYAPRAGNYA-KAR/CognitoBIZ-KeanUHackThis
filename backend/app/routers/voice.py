@@ -1,14 +1,18 @@
-"""Voice router — Morning briefings and voice Q&A."""
+"""Voice router for briefings, Q&A, and ElevenLabs testing."""
+
+from datetime import datetime, timedelta
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
 from pydantic import BaseModel
-from typing import List
-from datetime import datetime, timedelta
+
 from app.config.mongodb import get_db
 from app.middleware.auth import optional_auth
 from app.services import gemma_service
-from app.services.elevenlabs_service import elevenlabs_service
+from app.services.elevenlabs_service import (
+    ElevenLabsConfigurationError,
+    elevenlabs_service,
+)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -26,22 +30,25 @@ class VoiceQuestionRequest(BaseModel):
     conversation_history: List[dict] = []
 
 
+class TTSTestRequest(BaseModel):
+    text: str = "This is a CognitoBIZ ElevenLabs test."
+    voice_id: str | None = None
+
+
 @router.get("/briefing")
 async def get_morning_briefing(user=Depends(optional_auth)):
-    """Generate and return the morning briefing as audio + script."""
     company_id = get_company_id(user)
     db = get_db()
 
-    # Gather context
-    thirty_ago = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
-
     metrics_pipeline = [
         {"$match": {"company_id": company_id}},
-        {"$group": {
-            "_id": None,
-            "total_in": {"$sum": {"$cond": [{"$gt": ["$amount", 0]}, "$amount", 0]}},
-            "total_out": {"$sum": {"$cond": [{"$lt": ["$amount", 0]}, {"$abs": "$amount"}, 0]}},
-        }},
+        {
+            "$group": {
+                "_id": None,
+                "total_in": {"$sum": {"$cond": [{"$gt": ["$amount", 0]}, "$amount", 0]}},
+                "total_out": {"$sum": {"$cond": [{"$lt": ["$amount", 0]}, {"$abs": "$amount"}, 0]}},
+            }
+        },
     ]
 
     metrics_data = await db.transactions.aggregate(metrics_pipeline).to_list(1)
@@ -59,10 +66,9 @@ async def get_morning_briefing(user=Depends(optional_auth)):
     company = await db.companies.find_one({"_id": company_id}) or {"name": "Your Company"}
 
     burn_rate = metrics.get("total_out", 0) / 30
-    cash = 185420  # Would come from Plaid in production
+    cash = 185420
     runway = (cash / burn_rate) if burn_rate > 0 else 999
 
-    # Generate script with Gemma
     script = await gemma_service.generate_morning_briefing(
         metrics={
             "cash_position": cash,
@@ -83,7 +89,6 @@ async def get_morning_briefing(user=Depends(optional_auth)):
         company_name=company.get("name", "Your Company"),
     )
 
-    # Generate audio with ElevenLabs
     audio_result = await elevenlabs_service.generate_briefing_audio(script)
 
     return {
@@ -98,11 +103,9 @@ async def get_morning_briefing(user=Depends(optional_auth)):
 
 @router.post("/ask")
 async def voice_ask(req: VoiceQuestionRequest, user=Depends(optional_auth)):
-    """Answer a voice/text question about the company's financials."""
     company_id = get_company_id(user)
     db = get_db()
 
-    # Build financial context
     thirty_ago = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     spend_pipeline = [
@@ -122,14 +125,12 @@ async def voice_ask(req: VoiceQuestionRequest, user=Depends(optional_auth)):
         "runway_months": 7.7,
     }
 
-    # Gemma generates text answer
     answer_text = await gemma_service.answer_financial_question(
         question=req.question,
         financial_context=financial_context,
         conversation_history=req.conversation_history,
     )
 
-    # ElevenLabs converts to speech
     audio_result = await elevenlabs_service.generate_briefing_audio(answer_text)
 
     return {
@@ -138,3 +139,44 @@ async def voice_ask(req: VoiceQuestionRequest, user=Depends(optional_auth)):
         "mime_type": "audio/mpeg",
         "error": audio_result.get("error"),
     }
+
+
+@router.get("/voices")
+async def list_voices():
+    try:
+        voices = await elevenlabs_service.get_voices()
+    except ElevenLabsConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "voices": [
+            {
+                "voice_id": voice.get("voice_id"),
+                "name": voice.get("name"),
+                "category": voice.get("category"),
+                "labels": voice.get("labels", {}),
+                "preview_url": voice.get("preview_url"),
+            }
+            for voice in voices
+        ],
+        "count": len(voices),
+        "default_voice_id": elevenlabs_service.voice_id,
+    }
+
+
+@router.post("/tts-test")
+async def tts_test(req: TTSTestRequest):
+    try:
+        audio_result = await elevenlabs_service.generate_briefing_audio(
+            req.text,
+            voice_id=req.voice_id,
+        )
+    except ElevenLabsConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if not audio_result.get("audio_base64"):
+        raise HTTPException(status_code=502, detail=audio_result.get("error"))
+
+    return audio_result

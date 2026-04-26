@@ -1,24 +1,21 @@
 """
-Snowflake Service — Peer benchmarking and analytics queries.
+Snowflake Service - Peer benchmarking and analytics queries.
 Uses Snowflake Marketplace data (Cybersyn + BLS + SEC).
 """
 
-import asyncio
-from typing import Optional
-from functools import lru_cache
 from app.config.settings import get_settings
 
 settings = get_settings()
 
 try:
     import snowflake.connector
+
     SNOWFLAKE_AVAILABLE = True
 except ImportError:
     SNOWFLAKE_AVAILABLE = False
-    print("⚠️  Snowflake connector not available — using mock data")
+    print("Snowflake connector not available - using mock data")
 
 
-# Mock benchmark data for demo when Snowflake is unavailable
 MOCK_BENCHMARKS = {
     "SaaS": {
         "seed": {
@@ -72,14 +69,13 @@ class SnowflakeService:
                     warehouse=settings.snowflake_warehouse,
                     schema=settings.snowflake_schema,
                 )
-                print("✅ Connected to Snowflake")
+                print("Connected to Snowflake")
             except Exception as e:
-                print(f"⚠️  Snowflake connection failed: {e}")
+                print(f"Snowflake connection failed: {e}")
                 return None
         return self._conn
 
     def _query(self, sql: str, params: tuple = ()) -> list[dict]:
-        """Execute a Snowflake query and return results as list of dicts."""
         conn = self._get_connection()
         if conn is None:
             return []
@@ -91,17 +87,10 @@ class SnowflakeService:
             print(f"Snowflake query error: {e}")
             return []
 
-    async def get_peer_benchmarks(
-        self, industry: str, stage: str
-    ) -> dict:
-        """
-        Query Cybersyn + SEC data for peer company benchmarks.
-        Falls back to mock data if Snowflake unavailable.
-        """
-        # Try real Snowflake first
+    async def get_peer_benchmarks(self, industry: str, stage: str) -> dict:
         if SNOWFLAKE_AVAILABLE:
             sql = """
-            SELECT 
+            SELECT
                 category,
                 AVG(monthly_spend) as peer_avg,
                 PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY monthly_spend) as p25,
@@ -123,20 +112,13 @@ class SnowflakeService:
                     for row in rows
                 }
 
-        # Fallback to mock data
         industry_data = MOCK_BENCHMARKS.get(industry, MOCK_BENCHMARKS["SaaS"])
         return industry_data.get(stage, industry_data.get("seed", {}))
 
-    async def get_salary_benchmarks(
-        self, role_keyword: str
-    ) -> dict:
-        """
-        Query BLS salary data for market rate validation.
-        Used when generating WorkContracts.
-        """
+    async def get_salary_benchmarks(self, role_keyword: str) -> dict:
         if SNOWFLAKE_AVAILABLE:
             sql = """
-            SELECT 
+            SELECT
                 role,
                 percentile_10 as hourly_low,
                 percentile_50 as hourly_avg,
@@ -154,27 +136,21 @@ class SnowflakeService:
                     "hourly_high": float(row.get("HOURLY_HIGH", 0)),
                 }
 
-        # Fuzzy match against mock data
         for role, data in MOCK_SALARY_BENCHMARKS.items():
             if any(word in role for word in role_keyword.lower().split()):
                 return data
         return MOCK_SALARY_BENCHMARKS.get("backend_developer", {})
 
-    async def upsert_company_metrics(
-        self, company_id: str, metrics: dict
-    ) -> bool:
-        """
-        ETL: Write company aggregated metrics to Snowflake for benchmarking.
-        """
+    async def upsert_company_metrics(self, company_id: str, metrics: dict) -> bool:
         if not SNOWFLAKE_AVAILABLE:
-            return True  # Silent success in demo mode
+            return True
 
         sql = """
         MERGE INTO COGNITOBIZ.PUBLIC.COMPANY_METRICS AS target
         USING (SELECT %s as company_id, %s as category, %s as monthly_spend) AS source
         ON target.company_id = source.company_id AND target.category = source.category
         WHEN MATCHED THEN UPDATE SET monthly_spend = source.monthly_spend
-        WHEN NOT MATCHED THEN INSERT (company_id, category, monthly_spend) 
+        WHEN NOT MATCHED THEN INSERT (company_id, category, monthly_spend)
             VALUES (source.company_id, source.category, source.monthly_spend)
         """
         for category, amount in metrics.items():
@@ -182,5 +158,4 @@ class SnowflakeService:
         return True
 
 
-# Singleton
 snowflake_service = SnowflakeService()

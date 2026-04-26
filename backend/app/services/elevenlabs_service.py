@@ -1,14 +1,21 @@
 """
-ElevenLabs Service — Text-to-speech for morning briefings and voice Q&A responses.
+ElevenLabs service for text-to-speech and voice discovery.
 """
 
-import httpx
 import base64
+from typing import Optional
+
+import httpx
+
 from app.config.settings import get_settings
 
 settings = get_settings()
 
 ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
+
+
+class ElevenLabsConfigurationError(RuntimeError):
+    pass
 
 
 class ElevenLabsService:
@@ -20,8 +27,14 @@ class ElevenLabsService:
             "Content-Type": "application/json",
         }
 
+    def _require_config(self) -> None:
+        if not self.api_key:
+            raise ElevenLabsConfigurationError("ELEVENLABS_API_KEY is not configured.")
+        if not self.voice_id:
+            raise ElevenLabsConfigurationError("ELEVENLABS_VOICE_ID is not configured.")
+
     async def text_to_speech(self, text: str, voice_id: Optional[str] = None) -> bytes:
-        """Convert text to speech audio. Returns raw audio bytes (mp3)."""
+        self._require_config()
         vid = voice_id or self.voice_id
         url = f"{ELEVENLABS_BASE}/text-to-speech/{vid}"
 
@@ -38,57 +51,57 @@ class ElevenLabsService:
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(url, headers=self.headers, json=payload)
-                resp.raise_for_status()
-                return resp.content
-        except httpx.HTTPStatusError as e:
-            raise RuntimeError(f"ElevenLabs API error: {e.response.status_code} — {e.response.text}")
-        except Exception as e:
-            raise RuntimeError(f"ElevenLabs request failed: {str(e)}")
+                response = await client.post(url, headers=self.headers, json=payload)
+                response.raise_for_status()
+                return response.content
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"ElevenLabs API error: {exc.response.status_code} - {exc.response.text}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(f"ElevenLabs request failed: {exc}") from exc
 
-    async def text_to_speech_base64(self, text: str) -> str:
-        """Convert text to speech and return as base64-encoded string for JSON responses."""
-        audio_bytes = await self.text_to_speech(text)
+    async def text_to_speech_base64(self, text: str, voice_id: Optional[str] = None) -> str:
+        audio_bytes = await self.text_to_speech(text, voice_id=voice_id)
         return base64.b64encode(audio_bytes).decode("utf-8")
 
-    async def get_voices(self) -> list:
-        """List available voices."""
+    async def get_voices(self) -> list[dict]:
+        self._require_config()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
+                response = await client.get(
                     f"{ELEVENLABS_BASE}/voices",
                     headers={"xi-api-key": self.api_key},
                 )
-                resp.raise_for_status()
-                data = resp.json()
+                response.raise_for_status()
+                data = response.json()
                 return data.get("voices", [])
-        except Exception as e:
-            return []
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"ElevenLabs API error: {exc.response.status_code} - {exc.response.text}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(f"ElevenLabs request failed: {exc}") from exc
 
-    async def generate_briefing_audio(self, script: str) -> dict:
-        """Generate morning briefing audio. Returns base64 audio + metadata."""
+    async def generate_briefing_audio(self, script: str, voice_id: Optional[str] = None) -> dict:
         try:
-            audio_b64 = await self.text_to_speech_base64(script)
+            audio_b64 = await self.text_to_speech_base64(script, voice_id=voice_id)
             return {
                 "audio_base64": audio_b64,
                 "mime_type": "audio/mpeg",
-                "duration_estimate_seconds": len(script.split()) * 0.4,  # ~150 WPM
+                "duration_estimate_seconds": len(script.split()) * 0.4,
                 "script": script,
-                "voice_id": self.voice_id,
+                "voice_id": voice_id or self.voice_id,
             }
-        except Exception as e:
+        except Exception as exc:
             return {
                 "audio_base64": None,
                 "mime_type": "audio/mpeg",
                 "duration_estimate_seconds": 0,
                 "script": script,
-                "voice_id": self.voice_id,
-                "error": str(e),
+                "voice_id": voice_id or self.voice_id,
+                "error": str(exc),
             }
 
 
-# Fix missing import
-from typing import Optional
-
-# Singleton
 elevenlabs_service = ElevenLabsService()

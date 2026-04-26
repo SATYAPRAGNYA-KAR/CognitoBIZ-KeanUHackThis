@@ -5,6 +5,9 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # Auth0
     auth0_domain: str = ""
+    auth0_client_id: str = ""
+    auth0_client_secret: str = ""
+    auth0_secret: str = ""
     auth0_audience: str = "https://api.cognitobiz.ai"
     auth0_algorithms: str = "RS256"
 
@@ -22,12 +25,13 @@ class Settings(BaseSettings):
 
     # Google AI (Gemma 4)
     google_ai_api_key: str = ""
-    gemma_model: str = "gemma-2-9b-it"
+    gemma_model: str = "gemma-3-27b-it"
 
     # Solana
     solana_network: str = "devnet"
     solana_rpc_url: str = "https://api.devnet.solana.com"
     solana_owner_keypair: str = ""
+    solana_owner_public_key: str = ""
 
     # ElevenLabs
     elevenlabs_api_key: str = ""
@@ -40,6 +44,8 @@ class Settings(BaseSettings):
 
     # App
     frontend_url: str = "http://localhost:3000"
+    app_base_url: str = "http://localhost:5000"
+    port: int = 5000
     environment: str = "development"
 
     class Config:
