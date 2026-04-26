@@ -72,28 +72,32 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
 
             {/* List */}
             <div className="max-h-96 overflow-y-auto divide-y divide-white/5">
-              {notifications.map(n => (
-                <motion.div
-                  key={n._id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className={cn(
-                    'px-4 py-3 border-l-2 transition-colors',
-                    severityBorder[n.severity] || 'border-l-transparent',
-                    n.read ? 'opacity-60' : 'bg-white/[0.02]'
-                  )}
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 shrink-0">{icons[n.severity]}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-white truncate">{n.title}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{n.message}</p>
-                      <p className="text-[10px] text-gray-600 mt-1">{formatRelative(n.createdAt)}</p>
+              {notifications.map(n => {
+                const severity = n.severity ?? 'info'
+
+                return (
+                  <motion.div
+                    key={n._id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className={cn(
+                      'px-4 py-3 border-l-2 transition-colors',
+                      severityBorder[severity] || 'border-l-transparent',
+                      n.read ? 'opacity-60' : 'bg-white/[0.02]'
+                    )}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="mt-0.5 shrink-0">{icons[severity]}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-white truncate">{n.title}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{n.message}</p>
+                        <p className="text-[10px] text-gray-600 mt-1">{formatRelative(n.createdAt)}</p>
+                      </div>
+                      {!n.read && <div className="w-1.5 h-1.5 rounded-full bg-gold-400 shrink-0 mt-1" />}
                     </div>
-                    {!n.read && <div className="w-1.5 h-1.5 rounded-full bg-gold-400 shrink-0 mt-1" />}
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                )
+              })}
             </div>
 
             {/* Footer */}

@@ -1,4 +1,5 @@
 'use client'
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Bot, Shield, TrendingUp, Zap, ArrowRight } from 'lucide-react'
@@ -11,7 +12,7 @@ const features = [
   { icon: Zap, label: 'WorkContracts', desc: 'Milestone-gated vendor payments with escrow' },
 ]
 
-export default function LoginPage() {
+function LoginContent() {
   const searchParams = useSearchParams()
   const auth0Error = searchParams.get('auth0_error')
   const authLoginUrl = getAuthLoginUrl()
@@ -133,5 +134,13 @@ export default function LoginPage() {
         </motion.div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-obsidian-950 bg-grid" />}>
+      <LoginContent />
+    </Suspense>
   )
 }

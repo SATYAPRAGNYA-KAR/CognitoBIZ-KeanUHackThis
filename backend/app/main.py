@@ -17,6 +17,7 @@ from app.routers.contracts import router as contracts_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.guardrails import router as guardrails_router
 from app.routers.intelligence import router as intelligence_router
+from app.routers.payments import router as payments_router
 from app.routers.solana import router as solana_router
 from app.routers.voice import router as voice_router
 
@@ -57,7 +58,7 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(company_router, prefix="/api")
 app.include_router(auth_api_router, prefix="/api")
 app.include_router(auth_router)
-
+app.include_router(payments_router, prefix="/api")
 
 @app.get("/", response_class=HTMLResponse)
 async def root():

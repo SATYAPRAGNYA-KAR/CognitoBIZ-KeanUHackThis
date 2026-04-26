@@ -146,7 +146,7 @@ def apply_auth0_cookies(request: Request, response: Response) -> Response:
 async def get_auth0_user(request: Request) -> dict[str, Any] | None:
     try:
         return await get_auth0_client().get_user(store_options={"request": request})
-    except Auth0ConfigurationError:
+    except (Auth0ConfigurationError, Exception):
         return None
 
 

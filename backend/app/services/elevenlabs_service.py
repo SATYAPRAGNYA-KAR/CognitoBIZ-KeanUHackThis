@@ -1,6 +1,4 @@
-"""
-ElevenLabs service for text-to-speech and voice discovery.
-"""
+"""ElevenLabs service for text-to-speech and voice discovery."""
 
 import base64
 from typing import Optional
@@ -8,11 +6,12 @@ from typing import Optional
 import httpx
 
 from app.config.settings import get_settings
-from typing import Optional
 
 settings = get_settings()
 
 ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
+FALLBACK_VOICE_ID = "CwhRBWXzGAHq8TQ4Fs17"
+
 
 
 class ElevenLabsConfigurationError(RuntimeError):
@@ -23,6 +22,7 @@ class ElevenLabsService:
     def __init__(self):
         self.api_key = settings.elevenlabs_api_key
         self.voice_id = settings.elevenlabs_voice_id
+        self.model_id = settings.elevenlabs_model_id
         self.headers = {
             "xi-api-key": self.api_key,
             "Content-Type": "application/json",
@@ -37,11 +37,19 @@ class ElevenLabsService:
     async def text_to_speech(self, text: str, voice_id: Optional[str] = None) -> bytes:
         self._require_config()
         vid = voice_id or self.voice_id
-        url = f"{ELEVENLABS_BASE}/text-to-speech/{vid}"
+        try:
+            return await self._text_to_speech_request(text, vid)
+        except RuntimeError as exc:
+            message = str(exc)
+            if vid != FALLBACK_VOICE_ID and ("paid_plan_required" in message or "Free users cannot use library voices" in message):
+                return await self._text_to_speech_request(text, FALLBACK_VOICE_ID)
+            raise
 
+    async def _text_to_speech_request(self, text: str, voice_id: str) -> bytes:
+        url = f"{ELEVENLABS_BASE}/text-to-speech/{voice_id}"
         payload = {
             "text": text,
-            "model_id": "eleven_monolingual_v1",
+            "model_id": self.model_id,
             "voice_settings": {
                 "stability": 0.5,
                 "similarity_boost": 0.75,
@@ -93,6 +101,7 @@ class ElevenLabsService:
                 "duration_estimate_seconds": len(script.split()) * 0.4,
                 "script": script,
                 "voice_id": voice_id or self.voice_id,
+                "model_id": self.model_id,
             }
         except Exception as exc:
             return {
@@ -101,6 +110,7 @@ class ElevenLabsService:
                 "duration_estimate_seconds": 0,
                 "script": script,
                 "voice_id": voice_id or self.voice_id,
+                "model_id": self.model_id,
                 "error": str(exc),
             }
 

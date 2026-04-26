@@ -33,6 +33,7 @@ async def login(request: Request):
 
 @router.get("/callback")
 async def callback(request: Request):
+    settings = get_settings()
     try:
         await get_auth0_client().complete_interactive_login(
             url=str(request.url),
@@ -43,16 +44,17 @@ async def callback(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Auth0 callback failed") from exc
 
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url=f"{settings.frontend_url}/dashboard", status_code=302)
     return apply_auth0_cookies(request, response)
 
 
 @router.get("/logout")
 async def logout(request: Request):
     settings = get_settings()
+    return_to = settings.frontend_url.rstrip("/")
     try:
         url = await get_auth0_client().logout(
-            options=LogoutOptions(return_to=settings.app_base_url),
+            options=LogoutOptions(return_to=return_to),
             store_options={"request": request},
         )
     except Auth0ConfigurationError as exc:

@@ -10,13 +10,13 @@ import {
 } from 'lucide-react'
 
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'core' },
-  { href: '/intelligence', label: 'Intelligence', icon: Brain, group: 'core' },
-  { href: '/contracts', label: 'WorkContracts', icon: FileText, group: 'core' },
-  { href: '/payments', label: 'Payments', icon: CreditCard, group: 'core' },
-  { href: '/agents', label: 'Agent Roster', icon: Bot, group: 'system' },
-  { href: '/guardrails', label: 'Guardrails', icon: Shield, group: 'system' },
-  { href: '/audit', label: 'Audit Center', icon: ScrollText, group: 'system' },
+  { href: '/dashboard',             label: 'Dashboard',    icon: LayoutDashboard, group: 'core' },
+  { href: '/dashboard/intelligence', label: 'Intelligence', icon: Brain,           group: 'core' },
+  { href: '/dashboard/contracts',   label: 'WorkContracts',icon: FileText,        group: 'core' },
+  { href: '/dashboard/payments',    label: 'Payments',     icon: CreditCard,      group: 'core' },
+  { href: '/dashboard/agents',      label: 'Agent Roster', icon: Bot,             group: 'system' },
+  { href: '/dashboard/guardrails',  label: 'Guardrails',   icon: Shield,          group: 'system' },
+  { href: '/dashboard/audit',       label: 'Audit Center', icon: ScrollText,      group: 'system' },
 ]
 
 export function Sidebar() {

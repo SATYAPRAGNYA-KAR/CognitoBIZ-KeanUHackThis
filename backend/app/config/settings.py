@@ -35,7 +35,8 @@ class Settings(BaseSettings):
 
     # ElevenLabs
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    elevenlabs_voice_id: str = "CwhRBWXzGAHq8TQ4Fs17"
+    elevenlabs_model_id: str = "eleven_flash_v2_5"
 
     # Plaid
     plaid_client_id: str = ""
