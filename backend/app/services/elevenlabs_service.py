@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 
 from app.config.settings import get_settings
+from typing import Optional
 
 settings = get_settings()
 
