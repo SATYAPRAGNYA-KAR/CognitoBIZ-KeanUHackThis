@@ -1,9 +1,33 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+
 interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
   audioBase64?: string
 }
+
+// BCP-47 codes that map to the ElevenLabs multilingual model.
+// Keep in sync with backend/app/services/elevenlabs_service.py SUPPORTED_LANGUAGES.
+export const SUPPORTED_LANGUAGES: { code: string; name: string }[] = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'it', name: 'Italian' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'sv', name: 'Swedish' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'id', name: 'Indonesian' },
+  { code: 'vi', name: 'Vietnamese' },
+]
 
 export function useVoice() {
   const [isListening, setIsListening] = useState(false)
@@ -12,70 +36,82 @@ export function useVoice() {
   const [transcript, setTranscript] = useState('')
   const [conversation, setConversation] = useState<ConversationMessage[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [languageCode, setLanguageCode] = useState('en')
+
   const recognitionRef = useRef<any>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const transcriptRef = useRef('')
 
-  const isSupported = typeof window !== 'undefined' &&
+  const isSupported =
+    typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 
-  const askQuestion = useCallback(async (question: string) => {
-    if (!question.trim()) return
-    setIsThinking(true)
-    setConversation(prev => [...prev, { role: 'user', content: question }])
+  const askQuestion = useCallback(
+    async (question: string) => {
+      if (!question.trim()) return
+      setIsThinking(true)
+      setConversation(prev => [...prev, { role: 'user', content: question }])
 
-    try {
-      const historyForApi = conversation.map(m => ({ role: m.role, content: m.content }))
-      const response = await fetch('/api/voice/ask', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ question, conversation_history: historyForApi }),
-      })
+      try {
+        const historyForApi = conversation.map(m => ({ role: m.role, content: m.content }))
+        const response = await fetch('/api/voice/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            conversation_history: historyForApi,
+            language_code: languageCode,
+          }),
+        })
 
-      const data = await response.json().catch(() => ({ detail: 'Voice request failed.' })) as {
-        answer: string
-        audio_base64: string | null
-        mime_type: string
-        error?: string
-        detail?: string
+        const data = (await response.json().catch(() => ({ detail: 'Voice request failed.' }))) as {
+          answer: string
+          audio_base64: string | null
+          mime_type: string
+          error?: string
+          detail?: string
+        }
+
+        if (!response.ok) {
+          throw new Error(data.detail || data.error || 'Voice request failed.')
+        }
+
+        const assistantMessage: ConversationMessage = {
+          role: 'assistant',
+          content: data.answer,
+          audioBase64: data.audio_base64 || undefined,
+        }
+        setConversation(prev => [...prev, assistantMessage])
+
+        if (data.audio_base64) {
+          playAudio(data.audio_base64, data.mime_type || 'audio/mpeg')
+        }
+      } catch (e: any) {
+        setError(e.message)
+      } finally {
+        setIsThinking(false)
+        setTranscript('')
+        transcriptRef.current = ''
       }
-
-      if (!response.ok) {
-        throw new Error(data.detail || data.error || 'Voice request failed.')
-      }
-
-      const assistantMessage: ConversationMessage = {
-        role: 'assistant',
-        content: data.answer,
-        audioBase64: data.audio_base64 || undefined,
-      }
-      setConversation(prev => [...prev, assistantMessage])
-
-      // Play audio if available
-      if (data.audio_base64) {
-        playAudio(data.audio_base64, data.mime_type || 'audio/mpeg')
-      }
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setIsThinking(false)
-      setTranscript('')
-      transcriptRef.current = ''
-    }
-  }, [conversation])
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversation, languageCode],
+  )
 
   const startListening = useCallback(() => {
     if (!isSupported) {
       setError('Speech recognition not supported in this browser. Try Chrome.')
       return
     }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     const recognition = new SpeechRecognition()
     recognition.continuous = false
     recognition.interimResults = true
-    recognition.lang = 'en-US'
+    // Use the selected language for speech recognition too
+    recognition.lang = languageCode === 'zh' ? 'zh-CN'
+                     : languageCode === 'pt'  ? 'pt-BR'
+                     : `${languageCode}-${languageCode.toUpperCase()}`
 
     recognition.onstart = () => {
       setIsListening(true)
@@ -103,7 +139,7 @@ export function useVoice() {
 
     recognitionRef.current = recognition
     recognition.start()
-  }, [askQuestion, isSupported])
+  }, [askQuestion, isSupported, languageCode])
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
@@ -141,8 +177,19 @@ export function useVoice() {
   }, [])
 
   return {
-    isListening, isThinking, isSpeaking, transcript, conversation, error, isSupported,
-    startListening, stopListening, askQuestion, clearConversation,
+    isListening,
+    isThinking,
+    isSpeaking,
+    transcript,
+    conversation,
+    error,
+    isSupported,
+    languageCode,
+    setLanguageCode,
+    startListening,
+    stopListening,
+    askQuestion,
+    clearConversation,
   }
 }
 

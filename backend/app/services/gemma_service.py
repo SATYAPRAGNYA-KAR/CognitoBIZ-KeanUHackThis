@@ -135,6 +135,30 @@ async def _generate_content(
         raise RuntimeError("Gemma API request timed out after 90s.")
 
 
+_LEAKED_HEADER_PATTERNS = re.compile(
+    r"^\s*(\*\s*(Role|Tone|Input Data|Constitutional|CognitoBIZ|You are|Output only)[^\n]*\n)+",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+def _strip_leaked_headers(text: str) -> str:
+    """Remove any accidentally-echoed system-prompt lines from Gemma's response.
+
+    Gemma sometimes prepends lines like '* Role: ...' or '* Tone: ...' when
+    the system_instruction field is not fully supported by the model version.
+    This strips those lines so only the natural spoken script reaches ElevenLabs.
+    """
+    # Remove leading bullet lines that look like system-prompt metadata
+    text = _LEAKED_HEADER_PATTERNS.sub("", text).strip()
+    # Also strip lines starting with "* Role:", "* Tone:", "* Input Data:" etc.
+    cleaned_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.match(r"^\*\s*(Role|Tone|Input Data|Output|Constitutional|CognitoBIZ CONSTITUTIONAL)\b", stripped, re.I):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
 def _clean_json(text: str) -> str:
     return re.sub(r"```json\s*|\s*```", "", text).strip()
 
@@ -412,37 +436,47 @@ async def generate_morning_briefing(
     upcoming_renewals: list,
     company_name: str,
 ) -> str:
-    prompt = f"""
+    # Embed the role + tone INSIDE the user prompt so the model never echoes
+    # back a system_instruction block as part of its response.  Gemma models
+    # can repeat system_instruction text verbatim when the API field isn't
+    # fully supported — folding it into the prompt prevents this.
+    prompt = f"""You are a trusted CFO advisor writing a spoken audio briefing.
+Tone: conversational, warm, professional — NOT robotic, no bullet points.
+
 Generate a 60-second morning briefing for {company_name}'s founder.
 
-Data:
-- Metrics: {json.dumps(metrics, indent=2)}
-- Anomalies detected: {json.dumps(anomalies[:3], indent=2)}
+Financial data:
+- Cash position: ${metrics.get('cash_position', 0):,.0f}
+- Monthly burn: ${metrics.get('burn_rate_monthly', 0):,.0f}
+- Monthly revenue: ${metrics.get('revenue_monthly', 0):,.0f}
+- Runway: {metrics.get('runway_months', 0):.1f} months
+- Anomalies detected: {json.dumps(anomalies[:3])}
 - Pending approvals: {pending_approvals}
-- Upcoming renewals: {json.dumps(upcoming_renewals[:3], indent=2)}
+- Upcoming renewals: {json.dumps(upcoming_renewals[:3])}
 
-Rules:
-- Conversational, NOT robotic
-- Lead with the most important item
-- Mention 2-3 specific action items
-- End with ONE concrete task for today
-- Target 150-180 words (spoken in ~60 seconds)
-- No bullet points, just flowing natural speech
-- Address the founder as "you" not by name
-"""
+Output ONLY the spoken briefing script — no headers, no labels, no markdown.
+Lead with the most urgent item. Mention 2-3 specific action items.
+End with ONE concrete task for today. Target 150-180 words.
+Address the founder as "you"."""
+
     try:
-        return await _generate_content(
-            prompt,
-            "You write spoken audio scripts. Conversational, warm, professional - like a trusted CFO advisor.",
-        )
+        raw = await _generate_content(prompt)
+        return _strip_leaked_headers(raw)
     except Exception as e:
         return f"Good morning. There was an issue generating your briefing: {str(e)}. Please check your dashboard for the latest updates."
 
 
 async def answer_financial_question(question: str, financial_context: dict, conversation_history: list) -> str:
     history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in conversation_history[-6:]])
-    prompt = f"""
-Financial context: {json.dumps(financial_context, indent=2)}
+    prompt = f"""You are a conversational CFO advisor. Answer questions about company finances clearly and concisely.
+Output ONLY your spoken answer — no headers, no bullet points, no labels.
+
+Financial context:
+- Cash position: ${financial_context.get('cash_position', 0):,.0f}
+- Monthly burn rate: ${financial_context.get('burn_rate', 0):,.0f}
+- Runway: {financial_context.get('runway_months', 0):.1f} months
+- Pending approvals: {financial_context.get('pending_approvals', 0)}
+- Top spend categories: {json.dumps(financial_context.get('top_spend_categories', []))}
 
 Recent conversation:
 {history_text}
@@ -450,13 +484,10 @@ Recent conversation:
 Current question: {question}
 
 Answer in 2-4 conversational sentences. Be specific with numbers when available.
-Do NOT use bullet points. Speak naturally as if in a voice conversation.
-"""
+Speak naturally as if in a voice conversation."""
     try:
-        return await _generate_content(
-            prompt,
-            "You are a conversational CFO advisor. Answer questions about company finances clearly and concisely.",
-        )
+        raw = await _generate_content(prompt)
+        return _strip_leaked_headers(raw)
     except Exception as e:
         return f"I couldn't process that question right now. Error: {str(e)}"
 

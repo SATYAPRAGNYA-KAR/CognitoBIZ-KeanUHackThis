@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Volume2, RefreshCw, Mic, MicOff, Loader2 } from 'lucide-react'
+import { Play, Pause, Volume2, RefreshCw, Mic, MicOff, Loader2, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn, apiFetch } from '@/lib/utils'
 import { toast } from 'react-hot-toast'
@@ -31,6 +31,20 @@ function base64ToBlob(b64: string, mime: string): Blob {
 
 const BARS = Array.from({ length: 28 })
 
+// Keep in sync with backend SUPPORTED_LANGUAGES + useVoice.ts
+const BRIEFING_LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+]
+
 export function BriefingPlayer() {
   const [briefing, setBriefing] = useState<BriefingData | null>(null)
   const [fetching, setFetching] = useState(false)
@@ -38,6 +52,7 @@ export function BriefingPlayer() {
   const [ready, setReady] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [languageCode, setLanguageCode] = useState('en')
 
   // Voice Q&A state
   const [voiceOpen, setVoiceOpen] = useState(false)
@@ -68,7 +83,9 @@ export function BriefingPlayer() {
     setProgress(0)
     stopAudio()
     try {
-      const data = await apiFetch<BriefingData>('/api/voice/briefing')
+      const data = await apiFetch<BriefingData>(
+        `/api/voice/briefing?language_code=${encodeURIComponent(languageCode)}`
+      )
       setBriefing(data)
       setReady(true)
       if (data.error && !data.audio_base64) {
@@ -79,7 +96,7 @@ export function BriefingPlayer() {
     } finally {
       setFetching(false)
     }
-  }, [stopAudio])
+  }, [stopAudio, languageCode])
 
   // ── Play button handler ───────────────────────────────────────────────────
   const handlePlay = useCallback(async () => {
@@ -145,6 +162,13 @@ export function BriefingPlayer() {
     })
   }, [briefing, fetching, fetchBriefing, playing, ready, stopAudio])
 
+  // When language changes, reset so next play regenerates in the new language
+  useEffect(() => {
+    setReady(false)
+    setBriefing(null)
+    stopAudio()
+  }, [languageCode, stopAudio])
+
   // Cleanup on unmount
   useEffect(() => () => stopAudio(), [stopAudio])
 
@@ -158,7 +182,10 @@ export function BriefingPlayer() {
     const r = new SpeechRecognition()
     r.continuous = false
     r.interimResults = true
-    r.lang = 'en-US'
+    // Use selected language for speech recognition too
+    r.lang = languageCode === 'zh' ? 'zh-CN'
+           : languageCode === 'pt' ? 'pt-BR'
+           : `${languageCode}-${languageCode.toUpperCase()}`
     let latest = ''
     r.onstart = () => { setListening(true); setTranscript(''); setAiReply('') }
     r.onresult = (e: any) => {
@@ -169,7 +196,7 @@ export function BriefingPlayer() {
     r.onerror = () => setListening(false)
     recognitionRef.current = r
     r.start()
-  }, [])
+  }, [languageCode])
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop()
@@ -183,7 +210,11 @@ export function BriefingPlayer() {
     try {
       const data = await apiFetch<VoiceAnswer>('/api/voice/ask', {
         method: 'POST',
-        body: JSON.stringify({ question, conversation_history: conversation.slice(-6) }),
+        body: JSON.stringify({
+          question,
+          conversation_history: conversation.slice(-6),
+          language_code: languageCode,
+        }),
       })
       setAiReply(data.answer)
       setConversation(prev => [...prev, { role: 'assistant', content: data.answer }])
@@ -200,7 +231,7 @@ export function BriefingPlayer() {
       setAsking(false)
       setTranscript('')
     }
-  }, [conversation])
+  }, [conversation, languageCode])
 
   const totalSecs = briefing?.duration_estimate || 60
   const elapsed = Math.floor((progress / 100) * totalSecs)
@@ -214,6 +245,26 @@ export function BriefingPlayer() {
 
   return (
     <div className="space-y-3">
+      {/* Language selector */}
+      <div className="flex items-center gap-1.5 pb-2 border-b border-white/6">
+        <Globe size={11} className="text-gray-600 shrink-0" />
+        <span className="text-[10px] text-gray-600 uppercase tracking-widest shrink-0">Language</span>
+        <select
+          value={languageCode}
+          onChange={e => setLanguageCode(e.target.value)}
+          disabled={fetching || playing}
+          className={cn(
+            'ml-auto text-[11px] rounded-md px-2 py-1',
+            'bg-obsidian-800 border border-white/10 text-gray-300',
+            'focus:outline-none focus:border-gold-400/40 cursor-pointer',
+          )}
+        >
+          {BRIEFING_LANGUAGES.map(lang => (
+            <option key={lang.code} value={lang.code}>{lang.name}</option>
+          ))}
+        </select>
+      </div>
+
       {/* Player row */}
       <div className="flex items-center gap-3">
         {/* Play/Pause button — always clickable, never disabled unless actively fetching */}
@@ -277,7 +328,7 @@ export function BriefingPlayer() {
       {/* Script preview after fetch */}
       {briefing?.script && !voiceOpen && !fetching && (
         <p className="text-[11px] text-gray-500 leading-relaxed line-clamp-2 italic">
-          "{briefing.script.slice(0, 160)}…"
+          &quot;{briefing.script.slice(0, 160)}…&quot;
         </p>
       )}
       {briefing?.error && !briefing.audio_base64 && (
@@ -329,7 +380,7 @@ export function BriefingPlayer() {
               {transcript && (
                 <div className="flex gap-2">
                   <span className="text-[10px] text-gray-600 shrink-0 mt-0.5">You:</span>
-                  <p className="text-[11px] text-gray-300 italic">"{transcript}"</p>
+                  <p className="text-[11px] text-gray-300 italic">&quot;{transcript}&quot;</p>
                 </div>
               )}
               {asking && (
