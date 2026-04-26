@@ -206,6 +206,7 @@ class Contract(BaseModel):
     title: str
     vendor_id: Optional[str] = None
     vendor_email: Optional[str] = None
+    vendor_wallet: Optional[str] = None
     status: ContractStatus = ContractStatus.draft
     total_value: float
     currency: str = "USD"

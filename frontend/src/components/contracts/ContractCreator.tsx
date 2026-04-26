@@ -28,7 +28,7 @@ export interface GeneratedContract {
 
 interface ContractCreatorProps {
   onCreated?: (contract: GeneratedContract) => void
-  onSubmit?: (description: string, vendorEmail?: string) => Promise<void> | void
+  onSubmit?: (description: string, vendorEmail?: string, vendorWallet?: string) => Promise<void> | void
   onCancel?: () => void
   loading?: boolean
 }
@@ -40,6 +40,8 @@ export function ContractCreator({
   loading: externalLoading = false,
 }: ContractCreatorProps) {
   const [prompt, setPrompt] = useState('')
+  const [vendorEmail, setVendorEmail] = useState('')
+  const [vendorWallet, setVendorWallet] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState<GeneratedContract | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
@@ -107,7 +109,12 @@ export function ContractCreator({
     if (!generated) return
 
     if (onSubmit) {
-      await onSubmit(prompt)
+      await onSubmit(prompt, vendorEmail || undefined, vendorWallet || undefined)
+      toast.success('WorkContract created. Solana escrow initializing...')
+      setGenerated(null)
+      setPrompt('')
+      setVendorEmail('')
+      setVendorWallet('')
       return
     }
 
@@ -115,6 +122,8 @@ export function ContractCreator({
     onCreated?.(generated)
     setGenerated(null)
     setPrompt('')
+    setVendorEmail('')
+    setVendorWallet('')
   }
 
   return (
@@ -125,6 +134,22 @@ export function ContractCreator({
         value={prompt}
         onChange={(event) => setPrompt(event.target.value)}
         className="h-24"
+      />
+
+      <input
+        type="email"
+        placeholder="Vendor email (optional)"
+        value={vendorEmail}
+        onChange={(event) => setVendorEmail(event.target.value)}
+        className="w-full bg-obsidian-800 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-gold-400/40 transition-all"
+      />
+
+      <input
+        type="text"
+        placeholder="Vendor Solana wallet (optional)"
+        value={vendorWallet}
+        onChange={(event) => setVendorWallet(event.target.value)}
+        className="w-full bg-obsidian-800 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-gold-400/40 transition-all"
       />
 
       <Button

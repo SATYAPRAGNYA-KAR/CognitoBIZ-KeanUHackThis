@@ -82,6 +82,7 @@ export interface Contract {
   title: string
   vendorId: string | null
   vendorEmail: string
+  vendorWallet?: string | null
   status: ContractStatus
   totalValue: number
   currency: string

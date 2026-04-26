@@ -14,6 +14,27 @@ from app.config.settings import get_settings
 
 settings = get_settings()
 
+try:
+    from solders.keypair import Keypair
+    from solders.pubkey import Pubkey
+    from solders.system_program import TransferParams, transfer
+    from solders.message import Message
+    from solders.transaction import Transaction
+    from solana.rpc.async_api import AsyncClient
+
+    SOLANA_SDK_AVAILABLE = True
+    SOLANA_SDK_IMPORT_ERROR = ""
+except Exception as exc:
+    Keypair = None
+    Pubkey = None
+    TransferParams = None
+    transfer = None
+    Message = None
+    Transaction = None
+    AsyncClient = None
+    SOLANA_SDK_AVAILABLE = False
+    SOLANA_SDK_IMPORT_ERROR = str(exc)
+
 
 class SolanaRPCError(RuntimeError):
     pass
@@ -24,6 +45,9 @@ class SolanaService:
         self.rpc_url = settings.solana_rpc_url
         self.network = settings.solana_network
         self.owner_public_key = settings.solana_owner_public_key
+        self.owner_keypair_raw = settings.solana_owner_keypair
+        self.payment_mode = settings.solana_payment_mode.lower()
+        self.sol_per_usd = settings.solana_sol_per_usd
 
     def _mock_tx_hash(self, data: str) -> str:
         payload = f"{data}:{datetime.utcnow().isoformat()}"
@@ -32,6 +56,62 @@ class SolanaService:
     def _derive_escrow_wallet(self, contract_id: str, company_id: str) -> str:
         seed = hashlib.sha256(f"escrow:{company_id}:{contract_id}".encode()).hexdigest()
         return f"CB{seed[:42].upper()}"
+
+    def _load_owner_keypair(self):
+        if not SOLANA_SDK_AVAILABLE or Keypair is None:
+            raise SolanaRPCError(f"Solana SDK unavailable: {SOLANA_SDK_IMPORT_ERROR}")
+        if not self.owner_keypair_raw:
+            raise SolanaRPCError("No Solana signing key configured. Set SOLANA_OWNER_KEYPAIR.")
+
+        raw = self.owner_keypair_raw.strip()
+        try:
+            if raw.startswith("["):
+                return Keypair.from_json(raw)
+            return Keypair.from_base58_string(raw)
+        except Exception as exc:
+            raise SolanaRPCError(
+                "Invalid SOLANA_OWNER_KEYPAIR format. Use a base58 keypair string or JSON byte array."
+            ) from exc
+
+    def _resolve_payment_mode(self) -> tuple[bool, str]:
+        if self.payment_mode == "simulated":
+            return False, "SOLANA_PAYMENT_MODE is set to simulated."
+        if not SOLANA_SDK_AVAILABLE:
+            return False, f"Solana SDK unavailable: {SOLANA_SDK_IMPORT_ERROR}"
+        if not self.owner_keypair_raw:
+            return False, "SOLANA_OWNER_KEYPAIR is not configured."
+        if self.sol_per_usd <= 0:
+            return False, "SOLANA_SOL_PER_USD must be greater than 0 for real payments."
+        return True, "Real Solana payments are enabled."
+
+    def _lamports_from_usd(self, amount_usd: float) -> int:
+        return max(1, round(amount_usd * self.sol_per_usd * 1_000_000_000))
+
+    async def _send_sol_transfer(self, vendor_wallet: str, lamports: int) -> str:
+        owner = self._load_owner_keypair()
+        try:
+            recipient = Pubkey.from_string(vendor_wallet)
+        except Exception as exc:
+            raise SolanaRPCError("Invalid vendor wallet address.") from exc
+
+        async with AsyncClient(self.rpc_url, timeout=30.0) as client:
+            latest_blockhash_resp = await client.get_latest_blockhash()
+            blockhash = latest_blockhash_resp.value.blockhash
+
+            instruction = transfer(
+                TransferParams(
+                    from_pubkey=owner.pubkey(),
+                    to_pubkey=recipient,
+                    lamports=lamports,
+                )
+            )
+            message = Message([instruction], owner.pubkey())
+            transaction = Transaction([owner], message, blockhash)
+            send_resp = await client.send_transaction(transaction)
+            signature = getattr(send_resp, "value", None)
+            if not signature:
+                raise SolanaRPCError(f"Unexpected send_transaction response: {send_resp}")
+            return str(signature)
 
     async def _rpc_request(self, method: str, params: list[Any] | None = None) -> Any:
         body = {
@@ -69,6 +149,10 @@ class SolanaService:
                 if isinstance(latest_blockhash, dict)
                 else None,
                 "owner_public_key": self.owner_public_key or None,
+                "sdk_available": SOLANA_SDK_AVAILABLE,
+                "payment_mode": self.payment_mode,
+                "real_payments_ready": self._resolve_payment_mode()[0],
+                "payment_mode_reason": self._resolve_payment_mode()[1],
             }
         except SolanaRPCError as exc:
             return {
@@ -78,6 +162,10 @@ class SolanaService:
                 "health": "unavailable",
                 "error": str(exc),
                 "owner_public_key": self.owner_public_key or None,
+                "sdk_available": SOLANA_SDK_AVAILABLE,
+                "payment_mode": self.payment_mode,
+                "real_payments_ready": self._resolve_payment_mode()[0],
+                "payment_mode_reason": self._resolve_payment_mode()[1],
             }
 
     async def get_wallet_balance(self, wallet: str | None = None) -> dict[str, Any]:
@@ -164,6 +252,28 @@ class SolanaService:
         approved_by: str,
     ) -> dict[str, Any]:
         cluster = await self.get_cluster_status()
+        use_real_payments, payment_reason = self._resolve_payment_mode()
+
+        if use_real_payments:
+            try:
+                lamports = self._lamports_from_usd(amount_usd)
+                tx_hash = await self._send_sol_transfer(vendor_wallet, lamports)
+                return {
+                    "tx_hash": tx_hash,
+                    "network": self.network,
+                    "explorer_url": self.get_explorer_url(tx_hash),
+                    "amount_released": amount_usd,
+                    "amount_released_sol": round(lamports / 1_000_000_000, 9),
+                    "amount_released_lamports": lamports,
+                    "contract_id": contract_id,
+                    "milestone_id": milestone_id,
+                    "vendor_wallet": vendor_wallet,
+                    "mode": "real_sol_transfer",
+                    "rpc_connected": cluster.get("connected", False),
+                }
+            except Exception as exc:
+                payment_reason = f"Real transfer failed, falling back to simulation: {exc}"
+
         tx_hash = self._mock_tx_hash(
             f"escrow:release:{contract_id}:{milestone_id}:{amount_usd}:{vendor_wallet}:{approved_by}"
         )
@@ -178,6 +288,7 @@ class SolanaService:
             "vendor_wallet": vendor_wallet,
             "mode": "simulated_payment_reference",
             "rpc_connected": cluster.get("connected", False),
+            "payment_mode_reason": payment_reason,
         }
 
     async def write_audit_memo(self, action_summary: dict) -> str:

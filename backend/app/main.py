@@ -21,13 +21,24 @@ from app.routers.payments import router as payments_router
 from app.routers.solana import router as solana_router
 from app.routers.voice import router as voice_router
 
-settings = get_settings()
+from app.jobs.etl_job import run_full_etl
+try:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+except Exception:
+    AsyncIOScheduler = None
 
+scheduler = AsyncIOScheduler() if AsyncIOScheduler else None
+settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_db()
+    if scheduler:
+        scheduler.add_job(run_full_etl, 'interval', hours=24, id='etl_sync')
+        scheduler.start()
     yield
+    if scheduler:
+        scheduler.shutdown()
     await close_db()
 
 

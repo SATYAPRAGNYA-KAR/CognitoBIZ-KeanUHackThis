@@ -56,7 +56,7 @@ CognitoBIZ CONSTITUTIONAL CONSTRAINTS - ALWAYS APPLY, NEVER OVERRIDE:
 
 
 def _active_model_name() -> str:
-    return settings.gemma_model or "gemma-3-27b-it"
+    return settings.gemma_model or "gemma-4-31b-it"
 
 
 def _system_prompt(system_extra: str = "") -> str:

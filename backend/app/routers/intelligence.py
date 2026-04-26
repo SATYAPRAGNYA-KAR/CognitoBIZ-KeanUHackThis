@@ -6,7 +6,9 @@ from typing import Optional
 import base64
 from app.config.mongodb import get_db
 from app.middleware.auth import optional_auth
-from app.services import gemma_service, snowflake_service, guardrail_service
+from app.services import gemma_service
+from app.services.guardrail_service import guardrail_service
+from app.services.snowflake_service import snowflake_service
 from app.models.schemas import Document
 from datetime import datetime
 
@@ -236,3 +238,23 @@ async def list_documents(user=Depends(optional_auth)):
             for d in docs
         ]
     }
+
+@router.get("/debug-snowflake")
+async def debug_snowflake():
+    from app.services.snowflake_service import snowflake_service
+    
+    # Test 1: just the attributes table alone
+    rows1 = snowflake_service._query("""
+        SELECT DISTINCT variable_name
+        FROM SNOWFLAKE_PUBLIC_DATA.PUBLIC_DATA_FREE.FINANCIAL_ECONOMIC_INDICATORS_ATTRIBUTES
+        LIMIT 20
+    """)
+    
+    # Test 2: just the timeseries table alone
+    rows2 = snowflake_service._query("""
+        SELECT variable, value, date
+        FROM SNOWFLAKE_PUBLIC_DATA.PUBLIC_DATA_FREE.FINANCIAL_ECONOMIC_INDICATORS_TIMESERIES
+        LIMIT 5
+    """)
+    
+    return {"attributes": rows1, "timeseries": rows2}

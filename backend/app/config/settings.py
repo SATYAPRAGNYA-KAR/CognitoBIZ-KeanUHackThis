@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
 
+_env_file = Path(__file__).resolve().parents[2] / ".env"
 
 class Settings(BaseSettings):
     # Auth0
@@ -21,17 +23,19 @@ class Settings(BaseSettings):
     snowflake_password: str = ""
     snowflake_database: str = "COGNITOBIZ"
     snowflake_warehouse: str = "COMPUTE_WH"
-    snowflake_schema: str = "PUBLIC"
+    snowflake_schema: str = "PUBLIC_DATA_FREE"
 
     # Google AI (Gemma 4)
     google_ai_api_key: str = ""
-    gemma_model: str = "gemma-3-27b-it"
+    gemma_model: str = "gemma-4-31b-it"
 
     # Solana
     solana_network: str = "devnet"
     solana_rpc_url: str = "https://api.devnet.solana.com"
     solana_owner_keypair: str = ""
     solana_owner_public_key: str = ""
+    solana_payment_mode: str = "auto"
+    solana_sol_per_usd: float = 0.0
 
     # ElevenLabs
     elevenlabs_api_key: str = ""
@@ -50,10 +54,14 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     class Config:
-        env_file = ".env"
+        env_file = str(_env_file)
         case_sensitive = False
+        extra = "ignore"
 
 
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+def clear_settings_cache():
+    get_settings.cache_clear()

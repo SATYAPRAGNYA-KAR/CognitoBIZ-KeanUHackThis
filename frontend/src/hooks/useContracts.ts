@@ -17,6 +17,7 @@ export function useContracts() {
           title: c.title,
           vendorId: c.vendor_id || null,
           vendorEmail: c.vendor_email || '',
+          vendorWallet: c.vendor_wallet || null,
           status: c.status,
           totalValue: c.total_value,
           currency: c.currency || 'USD',
@@ -48,6 +49,7 @@ export function useContracts() {
         title: c.title,
         vendorId: c.vendor_id || null,
         vendorEmail: c.vendor_email || '',
+        vendorWallet: c.vendor_wallet || null,
         status: c.status,
         totalValue: c.total_value,
         currency: c.currency || 'USD',
@@ -79,10 +81,10 @@ export function useContracts() {
     }
   }, [])
 
-  const createContract = useCallback(async (description: string, vendorEmail?: string) => {
+  const createContract = useCallback(async (description: string, vendorEmail?: string, vendorWallet?: string) => {
     const result = await apiFetch<any>('/api/contracts', {
       method: 'POST',
-      body: JSON.stringify({ description, vendor_email: vendorEmail }),
+      body: JSON.stringify({ description, vendor_email: vendorEmail, vendor_wallet: vendorWallet }),
     })
     await fetchContracts()
     return result

@@ -6,6 +6,7 @@ settings = get_settings()
 
 _client: AsyncIOMotorClient | None = None
 
+print("USING MONGO URI:", settings.mongodb_uri)
 
 async def connect_db():
     global _client

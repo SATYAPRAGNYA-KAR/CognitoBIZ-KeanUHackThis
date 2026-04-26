@@ -15,10 +15,10 @@ export default function ContractsPage() {
   const [showCreator, setShowCreator] = useState(false)
   const [creating, setCreating] = useState(false)
 
-  const handleCreate = async (description: string, vendorEmail?: string) => {
+  const handleCreate = async (description: string, vendorEmail?: string, vendorWallet?: string) => {
     setCreating(true)
     try {
-      await createContract(description, vendorEmail)
+      await createContract(description, vendorEmail, vendorWallet)
       setShowCreator(false)
     } finally {
       setCreating(false)
