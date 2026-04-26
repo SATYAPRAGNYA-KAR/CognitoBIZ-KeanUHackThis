@@ -77,8 +77,11 @@ Is this transaction anomalous? Respond ONLY with valid JSON:
         response = model.generate_content(prompt)
         text = response.text.strip()
         # Strip markdown code fences if present
-        text = re.sub(r"```json\s*|\s*```", "", text).strip()
-        print("RAW MODEL OUTPUT:", repr(text))
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
         return json.loads(text)
     except Exception as e:
         return {
@@ -127,8 +130,11 @@ Produce a comprehensive benchmarking analysis. Respond ONLY with valid JSON:
 """
     try:
         response = model.generate_content(prompt)
-        text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        print("RAW MODEL OUTPUT:", repr(text))
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
         return json.loads(text)
     except Exception as e:
         return {
@@ -161,8 +167,11 @@ Provide a runway simulation analysis. Respond ONLY with valid JSON:
 """
     try:
         response = model.generate_content(prompt)
-        text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        print("RAW MODEL OUTPUT:", repr(text))
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
         return json.loads(text)
     except Exception as e:
         return {
@@ -202,9 +211,14 @@ Respond ONLY with valid JSON:
             {"mime_type": mime_type, "data": base64_content},
             prompt,
         ])
-        text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        print("RAW MODEL OUTPUT:", repr(text))
+        # text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
         return json.loads(text)
+
     except Exception as e:
         return {
             "vendor": None,
@@ -303,8 +317,11 @@ Review each requirement against submitted evidence. Respond ONLY with valid JSON
 """
     try:
         response = model.generate_content(prompt)
-        text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        print("RAW MODEL OUTPUT:", repr(text))
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
         return json.loads(text)
     except Exception as e:
         return {
@@ -401,8 +418,11 @@ Respond ONLY with valid JSON:
 """
     try:
         response = model.generate_content(prompt)
-        text = re.sub(r"```json\s*|\s*```", "", response.text.strip()).strip()
-        print("RAW MODEL OUTPUT:", repr(text))
+        text = response.text.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            text = text[start:end+1]
         return json.loads(text)
     except Exception:
         return {"goodhart_violation": False, "reason": "Check unavailable", "severity": "none"}
