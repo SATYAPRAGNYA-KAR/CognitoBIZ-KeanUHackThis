@@ -16,6 +16,20 @@ from app.routers.audit import router as audit_router
 from app.routers.company import notifications_router, company_router
 from app.routers.payments import router as payments_router
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from app.jobs.etl_job import run_full_etl
+
+scheduler = AsyncIOScheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await connect_db()
+    scheduler.add_job(run_full_etl, 'interval', hours=24, id='etl_sync')
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+    await close_db()
+
 settings = get_settings()
 
 

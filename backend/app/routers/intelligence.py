@@ -6,7 +6,9 @@ from typing import Optional
 import base64
 from app.config.mongodb import get_db
 from app.middleware.auth import optional_auth
-from app.services import gemma_service, snowflake_service, guardrail_service
+from app.services import gemma_service
+from app.services.guardrail_service import guardrail_service
+from app.services.snowflake_service import snowflake_service
 from app.models.schemas import Document
 from datetime import datetime
 

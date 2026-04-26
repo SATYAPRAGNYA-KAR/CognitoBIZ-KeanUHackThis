@@ -101,17 +101,22 @@ class SnowflakeService:
         # Try real Snowflake first
         if SNOWFLAKE_AVAILABLE:
             sql = """
-            SELECT 
-                category,
-                AVG(monthly_spend) as peer_avg,
-                PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY monthly_spend) as p25,
-                PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY monthly_spend) as p75,
-                COUNT(*) as sample_size
-            FROM COGNITOBIZ.PUBLIC.COMPANY_FINANCIALS
-            WHERE industry = %s AND stage = %s
-            GROUP BY category
+            SELECT
+                att.variable_name                                        AS category,
+                AVG(ts.value)                                            AS peer_avg,
+                PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ts.value)  AS p25,
+                PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ts.value)  AS p75,
+                COUNT(*)                                                 AS sample_size
+            FROM SNOWFLAKE_PUBLIC_DATA.PUBLIC_DATA_FREE.FINANCIAL_ECONOMIC_INDICATORS_TIMESERIES AS ts
+            JOIN SNOWFLAKE_PUBLIC_DATA.PUBLIC_DATA_FREE.FINANCIAL_ECONOMIC_INDICATORS_ATTRIBUTES AS att
+                ON ts.variable = att.variable
+            WHERE ts.date >= DATEADD('month', -6, CURRENT_DATE)
+            GROUP BY att.variable_name
+            ORDER BY peer_avg DESC
+            LIMIT 20
             """
-            rows = self._query(sql, (industry, stage))
+            rows = self._query(sql)
+            print(f"Snowflake returned {len(rows)} rows")
             if rows:
                 return {
                     row["CATEGORY"]: {
@@ -122,6 +127,8 @@ class SnowflakeService:
                     }
                     for row in rows
                 }
+            
+        print("⚠️ Falling back to mock data")
 
         # Fallback to mock data
         industry_data = MOCK_BENCHMARKS.get(industry, MOCK_BENCHMARKS["SaaS"])
@@ -136,16 +143,20 @@ class SnowflakeService:
         """
         if SNOWFLAKE_AVAILABLE:
             sql = """
-            SELECT 
-                role,
-                percentile_10 as hourly_low,
-                percentile_50 as hourly_avg,
-                percentile_90 as hourly_high
-            FROM COGNITOBIZ.PUBLIC.BLS_SALARY_BENCHMARKS
-            WHERE LOWER(role) LIKE %s
-            LIMIT 1
+            SELECT
+                att.industry       AS role,
+                MIN(ts.value)      AS hourly_low,
+                AVG(ts.value)      AS hourly_avg,
+                MAX(ts.value)      AS hourly_high
+            FROM SNOWFLAKE_PUBLIC_DATA.PUBLIC_DATA_FREE.BUREAU_OF_LABOR_STATISTICS_EMPLOYMENT_TIMESERIES AS ts
+            JOIN SNOWFLAKE_PUBLIC_DATA.PUBLIC_DATA_FREE.BUREAU_OF_LABOR_STATISTICS_EMPLOYMENT_ATTRIBUTES AS att
+                ON ts.variable = att.variable
+            WHERE att.measure ILIKE '%wage%'
+            AND ts.date >= DATEADD('month', -3, CURRENT_DATE)
+            GROUP BY att.industry
+            LIMIT 20
             """
-            rows = self._query(sql, (f"%{role_keyword.lower()}%",))
+            rows = self._query(sql)
             if rows:
                 row = rows[0]
                 return {
